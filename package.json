@@ -1,5 +1,5 @@
 {
-  "name": "remote-control-server",
+  "name": "my remote-control-server",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
