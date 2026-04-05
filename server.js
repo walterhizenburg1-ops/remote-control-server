@@ -7,7 +7,6 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocket.Server({ server });
-
 const rooms = {};
 
 wss.on('connection', (ws) => {
@@ -20,19 +19,48 @@ wss.on('connection', (ws) => {
     if (data.type === 'join') {
       currentRoom = data.room;
       currentRole = data.role;
-      if (!rooms[currentRoom]) rooms[currentRoom] = {};
+      if (!rooms[currentRoom]) {
+        rooms[currentRoom] = {
+          host: null,
+          controller: null,
+          hostCandidates: [],
+          controllerCandidates: []
+        };
+      }
       rooms[currentRoom][currentRole] = ws;
       console.log(`${currentRole} joined room ${currentRoom}`);
 
-      // notify the other side
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom][other]) {
         rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-joined', role: currentRole }));
         ws.send(JSON.stringify({ type: 'peer-joined', role: other }));
+
+        // flush buffered candidates!!
+        const myBuffer = currentRole === 'host' ? 'controllerCandidates' : 'hostCandidates';
+        rooms[currentRoom][myBuffer].forEach(c => ws.send(JSON.stringify(c)));
+        rooms[currentRoom][myBuffer] = [];
       }
     }
 
-    else if (data.type === 'offer' || data.type === 'answer' || data.type === 'ice') {
+    else if (data.type === 'offer' || data.type === 'answer') {
+      const other = currentRole === 'host' ? 'controller' : 'host';
+      if (rooms[currentRoom]?.[other]) {
+        rooms[currentRoom][other].send(JSON.stringify(data));
+      }
+    }
+
+    else if (data.type === 'ice') {
+      const other = currentRole === 'host' ? 'controller' : 'host';
+      if (rooms[currentRoom]?.[other]) {
+        rooms[currentRoom][other].send(JSON.stringify(data));
+      } else {
+        // buffer it until other side connects!!
+        const buffer = currentRole === 'host' ? 'hostCandidates' : 'controllerCandidates';
+        rooms[currentRoom][buffer].push(data);
+      }
+    }
+
+    else if (data.type === 'touch' || data.type === 'keyboard') {
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
