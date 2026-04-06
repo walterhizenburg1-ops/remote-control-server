@@ -74,7 +74,7 @@ wss.on('connection', (ws) => {
     }
 
     // touch and keyboard - always go to host!!
-    else if (data.type === 'touch' || data.type === 'keyboard') {
+    else if (data.type === 'touch' || data.type === 'keyboard' || data.type === 'system' || data.type === 'swipe' || data.type === 'scroll' || data.type === 'longpress') {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
