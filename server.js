@@ -49,6 +49,13 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'peer-joined', role: other }));
       }
     }
+      
+    else if (data.type === 'dimensions') {
+      console.log('Relaying dimensions to controller!!')
+      if (rooms[currentRoom]?.controller) {
+        rooms[currentRoom].controller.send(JSON.stringify(data))
+      }
+   }
 
     // WebRTC signaling - relay to other peer!!
     else if (data.type === 'offer') {
