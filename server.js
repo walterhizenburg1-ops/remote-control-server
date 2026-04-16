@@ -18,7 +18,11 @@ wss.on('connection', (ws) => {
   ws.on('message', (message, isBinary) => {
     if (isBinary) {
       if (currentRoom && rooms[currentRoom]?.controller) {
-        rooms[currentRoom].controller.send(message);
+        try {
+          rooms[currentRoom].controller.send(message, { binary: true });
+        } catch(e) {
+          console.log('Frame send error:', e);
+        }
       }
       return;
     }
@@ -41,7 +45,6 @@ wss.on('connection', (ws) => {
       }
       rooms[currentRoom][currentRole] = ws;
       console.log(`${currentRole} joined room ${currentRoom}`);
-
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom][other]) {
         console.log('Both peers here!! Notifying!!');
@@ -49,39 +52,17 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'peer-joined', role: other }));
       }
     }
-      
-    else if (data.type === 'dimensions') {
-      console.log('Relaying dimensions to controller!!')
-      if (rooms[currentRoom]?.controller) {
-        rooms[currentRoom].controller.send(JSON.stringify(data))
-      }
-   }
 
-    // WebRTC signaling - relay to other peer!!
-    else if (data.type === 'offer') {
-      console.log('Relaying offer to controller!!');
+    else if (data.type === 'dimensions') {
+      console.log('Relaying dimensions to controller!!');
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
-    else if (data.type === 'answer') {
-      console.log('Relaying answer to host!!');
-      if (rooms[currentRoom]?.host) {
-        rooms[currentRoom].host.send(JSON.stringify(data));
-      }
-    }
-
-    else if (data.type === 'ice') {
-      console.log('Relaying ICE from:', currentRole);
-      const other = currentRole === 'host' ? 'controller' : 'host';
-      if (rooms[currentRoom]?.[other]) {
-        rooms[currentRoom][other].send(JSON.stringify(data));
-      }
-    }
-
-    // touch and keyboard - always go to host!!
-    else if (data.type === 'touch' || data.type === 'keyboard' || data.type === 'system' || data.type === 'swipe' || data.type === 'scroll' || data.type === 'longpress') {
+    else if (data.type === 'touch' || data.type === 'keyboard' ||
+             data.type === 'system' || data.type === 'swipe' ||
+             data.type === 'scroll' || data.type === 'longpress') {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
@@ -98,18 +79,6 @@ wss.on('connection', (ws) => {
       }
     }
   });
-  
-  ws.on('message', (message, isBinary) => {
-    if (isBinary) {
-      if (currentRoom && rooms[currentRoom]?.controller) {
-        try {
-          rooms[currentRoom].controller.send(message, { binary: true })
-        } catch(e) {
-          console.log('Frame send error:', e)
-        }
-      }
-      return
-    }
 
   ws.on('error', (err) => {
     console.log('Error:', err);
