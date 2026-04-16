@@ -98,6 +98,18 @@ wss.on('connection', (ws) => {
       }
     }
   });
+  
+  ws.on('message', (message, isBinary) => {
+    if (isBinary) {
+      if (currentRoom && rooms[currentRoom]?.controller) {
+        try {
+          rooms[currentRoom].controller.send(message, { binary: true })
+        } catch(e) {
+          console.log('Frame send error:', e)
+        }
+      }
+      return
+    }
 
   ws.on('error', (err) => {
     console.log('Error:', err);
