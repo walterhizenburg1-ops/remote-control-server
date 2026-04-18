@@ -60,7 +60,13 @@ wss.on('connection', (ws) => {
       }
     }
 
-    else if (data.type === 'touch' || data.type === 'keyboard' ||
+    else if (data.type === 'mode') {
+  const other = currentRole === 'host' ? 'controller' : 'host'
+  if (rooms[currentRoom]?.[other]) {
+    rooms[currentRoom][other].send(JSON.stringify(data))
+  }
+}
+else if (data.type === 'touch' || data.type === 'keyboard' ||
              data.type === 'system' || data.type === 'swipe' ||
              data.type === 'scroll' || data.type === 'longpress') {
       if (rooms[currentRoom]?.host) {
