@@ -53,20 +53,45 @@ wss.on('connection', (ws) => {
       }
     }
 
+    // WebRTC signaling!!
+    else if (data.type === 'offer') {
+      console.log('Relaying offer to controller!!');
+      if (rooms[currentRoom]?.controller) {
+        rooms[currentRoom].controller.send(JSON.stringify(data));
+      }
+    }
+
+    else if (data.type === 'answer') {
+      console.log('Relaying answer to host!!');
+      if (rooms[currentRoom]?.host) {
+        rooms[currentRoom].host.send(JSON.stringify(data));
+      }
+    }
+
+    else if (data.type === 'ice') {
+      console.log('Relaying ICE from:', currentRole);
+      const other = currentRole === 'host' ? 'controller' : 'host';
+      if (rooms[currentRoom]?.[other]) {
+        rooms[currentRoom][other].send(JSON.stringify(data));
+      }
+    }
+
     else if (data.type === 'dimensions') {
-      console.log('Relaying dimensions to controller!!');
+      console.log('Relaying dimensions!!');
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
     else if (data.type === 'mode') {
-  const other = currentRole === 'host' ? 'controller' : 'host'
-  if (rooms[currentRoom]?.[other]) {
-    rooms[currentRoom][other].send(JSON.stringify(data))
-  }
-}
-else if (data.type === 'touch' || data.type === 'keyboard' ||
+      console.log('Relaying mode switch:', data.value);
+      const other = currentRole === 'host' ? 'controller' : 'host';
+      if (rooms[currentRoom]?.[other]) {
+        rooms[currentRoom][other].send(JSON.stringify(data));
+      }
+    }
+
+    else if (data.type === 'touch' || data.type === 'keyboard' ||
              data.type === 'system' || data.type === 'swipe' ||
              data.type === 'scroll' || data.type === 'longpress') {
       if (rooms[currentRoom]?.host) {
