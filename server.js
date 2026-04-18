@@ -1,13 +1,100 @@
 const WebSocket = require('ws');
 const http = require('http');
+const admin = require('firebase-admin');
+const serviceAccount = require('./serviceAccountKey.json');
 
-const server = http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Remote Control Server Running!!');
+// init Firebase!!
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET') {
+    res.writeHead(200);
+    res.end('Remote Control Server Running!!');
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/register') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const { deviceId, fcmToken } = JSON.parse(body);
+        devices[deviceId] = { fcmToken, registeredAt: Date.now() };
+        console.log(`Device registered: ${deviceId}`);
+        res.writeHead(200);
+        res.end('OK');
+      } catch(e) {
+        res.writeHead(400);
+        res.end('Error');
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/wake') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { deviceId } = JSON.parse(body);
+        const device = devices[deviceId];
+        if (!device) {
+          res.writeHead(404);
+          res.end('Device not found');
+          return;
+        }
+        // send FCM wake message!!
+        await admin.messaging().send({
+          token: device.fcmToken,
+          data: { action: 'wake', deviceId },
+          android: {
+            priority: 'high',
+            ttl: 30000
+          }
+        });
+        console.log(`Wake sent to device: ${deviceId}`);
+        res.writeHead(200);
+        res.end('Wake sent!!');
+      } catch(e) {
+        console.log('Wake error:', e);
+        res.writeHead(500);
+        res.end('Error');
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/devices') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const { deviceId } = JSON.parse(body);
+        const device = devices[deviceId];
+        if (device) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ found: true }));
+        } else {
+          res.writeHead(200);
+          res.end(JSON.stringify({ found: false }));
+        }
+      } catch(e) {
+        res.writeHead(400);
+        res.end('Error');
+      }
+    });
+    return;
+  }
+
+  res.writeHead(404);
+  res.end('Not found');
 });
 
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
+const devices = {};
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -53,7 +140,6 @@ wss.on('connection', (ws) => {
       }
     }
 
-    // WebRTC signaling!!
     else if (data.type === 'offer') {
       console.log('Relaying offer to controller!!');
       if (rooms[currentRoom]?.controller) {
@@ -69,7 +155,6 @@ wss.on('connection', (ws) => {
     }
 
     else if (data.type === 'ice') {
-      console.log('Relaying ICE from:', currentRole);
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
@@ -77,14 +162,12 @@ wss.on('connection', (ws) => {
     }
 
     else if (data.type === 'dimensions') {
-      console.log('Relaying dimensions!!');
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
     else if (data.type === 'mode') {
-      console.log('Relaying mode switch:', data.value);
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
