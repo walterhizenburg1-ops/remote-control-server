@@ -9,7 +9,7 @@ admin.initializeApp({
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
   }),
-  databaseURL: 'https://my-c2-ad3d8-default-rtdb.firebaseio.com'
+  databaseURL: 'https://my-fcm-4399f-default-rtdb.firebaseio.com'
 });
 
 const db = admin.database();
