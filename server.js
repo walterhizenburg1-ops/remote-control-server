@@ -67,13 +67,22 @@ const server = http.createServer(async (req, res) => {
 
         // send FCM wake!!
         await admin.messaging().send({
-          token: device.fcmToken,
-          data: { action: 'wake', deviceId },
-          android: {
-            priority: 'high',
-            ttl: 30000
-          }
-        })
+  token: device.fcmToken,
+  notification: {
+    title: 'RemoteLink',
+    body: 'Controller is connecting...'
+  },
+  data: { action: 'wake', deviceId },
+  android: {
+    priority: 'high',
+    notification: {
+      channelId: 'wake_channel',
+      priority: 'max',
+      defaultSound: true,
+      defaultVibrateTimings: true
+    }
+  }
+})
 
         console.log(`Wake sent to: ${deviceId}`)
         res.writeHead(200)
