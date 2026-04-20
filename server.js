@@ -53,7 +53,6 @@ wss.on('connection', (ws) => {
       }
     }
 
-    // WebRTC signaling!!
     else if (data.type === 'offer') {
       console.log('Relaying offer to controller!!');
       if (rooms[currentRoom]?.controller) {
@@ -91,14 +90,17 @@ wss.on('connection', (ws) => {
       }
     }
 
-   else if (data.type === 'touch' || data.type === 'keyboard' ||
-         data.type === 'system' || data.type === 'swipe' ||
-         data.type === 'scroll' || data.type === 'longpress' ||
-         data.type === 'overlay') {
-    if (rooms[currentRoom]?.host) {
+    else if (
+      data.type === 'touch' || data.type === 'keyboard' ||
+      data.type === 'system' || data.type === 'swipe' ||
+      data.type === 'scroll' || data.type === 'longpress' ||
+      data.type === 'overlay'
+    ) {
+      if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
+      }
     }
-}
+  });
 
   ws.on('close', () => {
     console.log(`${currentRole} left room ${currentRoom}`);
