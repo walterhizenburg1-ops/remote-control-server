@@ -94,7 +94,7 @@ wss.on('connection', (ws) => {
       data.type === 'touch' || data.type === 'keyboard' ||
       data.type === 'system' || data.type === 'swipe' ||
       data.type === 'scroll' || data.type === 'longpress' ||
-      data.type === 'overlay'
+      data.type === 'overlay_start' || data.type === 'overlay_stop' ||
     ) {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
