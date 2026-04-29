@@ -9,6 +9,20 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 
+// ==========================================
+// HEARTBEAT PING ADDED HERE
+// ==========================================
+const interval = setInterval(() => {
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.ping();
+    }
+  });
+}, 25000); // ping every 25 seconds!!
+
+wss.on('close', () => clearInterval(interval));
+// ==========================================
+
 wss.on('connection', (ws) => {
   let currentRoom = null;
   let currentRole = null;
