@@ -9,19 +9,16 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 
-// ==========================================
-// HEARTBEAT PING ADDED HERE
-// ==========================================
+// keep connections alive!!
 const interval = setInterval(() => {
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
-      client.ping();
+      client.ping()
     }
-  });
-}, 25000); // ping every 25 seconds!!
+  })
+}, 25000)
 
-wss.on('close', () => clearInterval(interval));
-// ==========================================
+wss.on('close', () => clearInterval(interval))
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -54,35 +51,73 @@ wss.on('connection', (ws) => {
     if (data.type === 'join') {
       currentRoom = data.room;
       currentRole = data.role;
+
       if (!rooms[currentRoom]) {
-        rooms[currentRoom] = { host: null, controller: null };
+        rooms[currentRoom] = {
+          host: null,
+          controller: null,
+          hostReady: false
+        };
       }
+
       rooms[currentRoom][currentRole] = ws;
       console.log(`${currentRole} joined room ${currentRoom}`);
-      const other = currentRole === 'host' ? 'controller' : 'host';
-      if (rooms[currentRoom][other]) {
-        console.log('Both peers here!! Notifying!!');
-        rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-joined', role: currentRole }));
-        ws.send(JSON.stringify({ type: 'peer-joined', role: other }));
+
+      // if host joins notify waiting controller!!
+      if (currentRole === 'host') {
+        rooms[currentRoom].hostReady = true
+        if (rooms[currentRoom].controller) {
+          rooms[currentRoom].controller.send(JSON.stringify({
+            type: 'host-ready'
+          }))
+        }
+      }
+
+      // if controller joins check if host is ready!!
+      if (currentRole === 'controller') {
+        if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
+          // notify host!!
+          rooms[currentRoom].host.send(JSON.stringify({
+            type: 'peer-joined',
+            role: 'controller'
+          }))
+          // tell controller host is ready!!
+          ws.send(JSON.stringify({
+            type: 'host-ready'
+          }))
+        } else {
+          // tell controller to wait for host!!
+          ws.send(JSON.stringify({
+            type: 'waiting-for-host'
+          }))
+        }
+      }
+    }
+
+    else if (data.type === 'streaming-started') {
+      // host confirmed streaming started!!
+      // notify controller!!
+      if (rooms[currentRoom]?.controller) {
+        rooms[currentRoom].controller.send(JSON.stringify({
+          type: 'streaming-started',
+          mode: data.mode
+        }))
       }
     }
 
     else if (data.type === 'offer') {
-      console.log('Relaying offer to controller!!');
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
     else if (data.type === 'answer') {
-      console.log('Relaying answer to host!!');
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
     }
 
     else if (data.type === 'ice') {
-      console.log('Relaying ICE from:', currentRole);
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
@@ -90,26 +125,28 @@ wss.on('connection', (ws) => {
     }
 
     else if (data.type === 'dimensions') {
-      console.log('Relaying dimensions!!');
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
     else if (data.type === 'mode') {
-      console.log('Relaying mode switch:', data.value);
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
       }
     }
 
-    else if (
-      data.type === 'touch' || data.type === 'keyboard' ||
-      data.type === 'system' || data.type === 'swipe' ||
-      data.type === 'scroll' || data.type === 'longpress' ||
-      data.type === 'overlay_start' || data.type === 'overlay_stop'
-    ) {
+    else if (data.type === 'stream-mode-choice') {
+      // controller telling host which mode to use!!
+      if (rooms[currentRoom]?.host) {
+        rooms[currentRoom].host.send(JSON.stringify(data));
+      }
+    }
+
+    else if (data.type === 'touch' || data.type === 'keyboard' ||
+             data.type === 'system' || data.type === 'swipe' ||
+             data.type === 'scroll' || data.type === 'longpress') {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
@@ -119,6 +156,9 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     console.log(`${currentRole} left room ${currentRoom}`);
     if (currentRoom && rooms[currentRoom]) {
+      if (currentRole === 'host') {
+        rooms[currentRoom].hostReady = false
+      }
       delete rooms[currentRoom][currentRole];
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
