@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const http = require('http');
+const https = require('https');
 
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -10,7 +11,7 @@ const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 
 // keep connections alive!!
-const interval = setInterval(() => {
+const pingInterval = setInterval(() => {
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.ping()
@@ -18,7 +19,16 @@ const interval = setInterval(() => {
   })
 }, 25000)
 
-wss.on('close', () => clearInterval(interval))
+wss.on('close', () => clearInterval(pingInterval))
+
+// keep render server awake!!
+setInterval(() => {
+  https.get('https://remote-control-server-wrs1.onrender.com', (res) => {
+    console.log('Self ping OK:', res.statusCode)
+  }).on('error', () => {
+    console.log('Self ping failed - server still running!!')
+  })
+}, 14 * 60 * 1000)
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -63,7 +73,6 @@ wss.on('connection', (ws) => {
       rooms[currentRoom][currentRole] = ws;
       console.log(`${currentRole} joined room ${currentRoom}`);
 
-      // if host joins notify waiting controller!!
       if (currentRole === 'host') {
         rooms[currentRoom].hostReady = true
         if (rooms[currentRoom].controller) {
@@ -73,35 +82,38 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // if controller joins check if host is ready!!
       if (currentRole === 'controller') {
         if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
-          // notify host!!
           rooms[currentRoom].host.send(JSON.stringify({
             type: 'peer-joined',
             role: 'controller'
           }))
-          // tell controller host is ready!!
-          ws.send(JSON.stringify({
-            type: 'host-ready'
-          }))
+          ws.send(JSON.stringify({ type: 'host-ready' }))
         } else {
-          // tell controller to wait for host!!
-          ws.send(JSON.stringify({
-            type: 'waiting-for-host'
-          }))
+          ws.send(JSON.stringify({ type: 'waiting-for-host' }))
         }
       }
     }
 
+    else if (data.type === 'heartbeat') {
+      // relay heartbeat to host!!
+      if (currentRole === 'controller' && rooms[currentRoom]?.host) {
+        rooms[currentRoom].host.send(JSON.stringify({ type: 'heartbeat' }))
+      }
+      // send ack back to whoever sent it!!
+      ws.send(JSON.stringify({ type: 'heartbeat-ack' }))
+    }
+
+    else if (data.type === 'heartbeat-ack') {
+      // relay ack to controller!!
+      if (currentRole === 'host' && rooms[currentRoom]?.controller) {
+        rooms[currentRoom].controller.send(JSON.stringify({ type: 'heartbeat-ack' }))
+      }
+    }
+
     else if (data.type === 'streaming-started') {
-      // host confirmed streaming started!!
-      // notify controller!!
       if (rooms[currentRoom]?.controller) {
-        rooms[currentRoom].controller.send(JSON.stringify({
-          type: 'streaming-started',
-          mode: data.mode
-        }))
+        rooms[currentRoom].controller.send(JSON.stringify(data))
       }
     }
 
@@ -138,7 +150,6 @@ wss.on('connection', (ws) => {
     }
 
     else if (data.type === 'stream-mode-choice') {
-      // controller telling host which mode to use!!
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
