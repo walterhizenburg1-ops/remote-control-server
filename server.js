@@ -1,6 +1,5 @@
 const WebSocket = require('ws');
 const http = require('http');
-const https = require('https');
 
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -20,15 +19,6 @@ const pingInterval = setInterval(() => {
 }, 25000)
 
 wss.on('close', () => clearInterval(pingInterval))
-
-// keep render server awake!!
-setInterval(() => {
-  https.get('https://remote-control-server-wrs1.onrender.com', (res) => {
-    console.log('Self ping OK:', res.statusCode)
-  }).on('error', () => {
-    console.log('Self ping failed - server still running!!')
-  })
-}, 14 * 60 * 1000)
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
