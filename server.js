@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const http = require('http');
+const https = require('https');
 
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -8,17 +9,51 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
+const fcmTokens = {};
+const FCM_SERVER_KEY = '7c192da0f83f64a80b0d476eaafd87083990c6c0';
 
 // keep connections alive!!
 const pingInterval = setInterval(() => {
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.ping()
-    }
+    if (client.readyState === WebSocket.OPEN) client.ping()
   })
 }, 25000)
 
 wss.on('close', () => clearInterval(pingInterval))
+
+function wakeHostViaFCM(deviceId) {
+  const token = fcmTokens[deviceId]
+  if (!token) {
+    console.log('No FCM token for device:', deviceId)
+    return
+  }
+
+  console.log('Sending FCM wake to:', deviceId)
+
+  const payload = JSON.stringify({
+    to: token,
+    data: { type: 'wake', deviceId: deviceId },
+    priority: 'high',
+    time_to_live: 60
+  })
+
+  const options = {
+    hostname: 'fcm.googleapis.com',
+    path: '/fcm/send',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `key=${FCM_SERVER_KEY}`
+    }
+  }
+
+  const req = https.request(options, (res) => {
+    console.log('FCM response:', res.statusCode)
+  })
+  req.on('error', (e) => console.log('FCM error:', e))
+  req.write(payload)
+  req.end()
+}
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
@@ -80,25 +115,17 @@ wss.on('connection', (ws) => {
           }))
           ws.send(JSON.stringify({ type: 'host-ready' }))
         } else {
+          // host offline!! wake via FCM!!
+          console.log('Host offline!! Waking via FCM!!')
+          wakeHostViaFCM(currentRoom)
           ws.send(JSON.stringify({ type: 'waiting-for-host' }))
         }
       }
     }
 
-    else if (data.type === 'heartbeat') {
-      // relay heartbeat to host!!
-      if (currentRole === 'controller' && rooms[currentRoom]?.host) {
-        rooms[currentRoom].host.send(JSON.stringify({ type: 'heartbeat' }))
-      }
-      // send ack back to whoever sent it!!
-      ws.send(JSON.stringify({ type: 'heartbeat-ack' }))
-    }
-
-    else if (data.type === 'heartbeat-ack') {
-      // relay ack to controller!!
-      if (currentRole === 'host' && rooms[currentRoom]?.controller) {
-        rooms[currentRoom].controller.send(JSON.stringify({ type: 'heartbeat-ack' }))
-      }
+    else if (data.type === 'register-fcm') {
+      console.log('FCM token registered for:', data.deviceId)
+      fcmTokens[data.deviceId] = data.token
     }
 
     else if (data.type === 'streaming-started') {
