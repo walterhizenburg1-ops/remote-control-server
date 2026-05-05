@@ -10,7 +10,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 const fcmTokens = {};
-const FCM_SERVER_KEY = 'YOUR_KEY_HERE';
+const FCM_SERVER_KEY = '7c192da0f83f64a80b0d476eaafd87083990c6c0';
 
 // handle crashes gracefully!!
 process.on('uncaughtException', (err) => {
