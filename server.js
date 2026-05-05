@@ -10,16 +10,29 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 const fcmTokens = {};
-const FCM_SERVER_KEY = '7c192da0f83f64a80b0d476eaafd87083990c6c0';
+const FCM_SERVER_KEY = 'YOUR_KEY_HERE';
 
-// keep connections alive!!
-const pingInterval = setInterval(() => {
+// handle crashes gracefully!!
+process.on('uncaughtException', (err) => {
+  console.log('Uncaught exception:', err.message)
+})
+process.on('unhandledRejection', (err) => {
+  console.log('Unhandled rejection:', err)
+})
+
+// keep connections alive + detect dead ones!!
+const healthCheck = setInterval(() => {
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) client.ping()
+    if (client.isAlive === false) {
+      console.log('Terminating dead connection!!')
+      return client.terminate()
+    }
+    client.isAlive = false
+    client.ping()
   })
-}, 25000)
+}, 30000)
 
-wss.on('close', () => clearInterval(pingInterval))
+wss.on('close', () => clearInterval(healthCheck))
 
 function wakeHostViaFCM(deviceId) {
   const token = fcmTokens[deviceId]
@@ -50,7 +63,7 @@ function wakeHostViaFCM(deviceId) {
   const req = https.request(options, (res) => {
     console.log('FCM response:', res.statusCode)
   })
-  req.on('error', (e) => console.log('FCM error:', e))
+  req.on('error', (e) => console.log('FCM error:', e.message))
   req.write(payload)
   req.end()
 }
@@ -58,16 +71,20 @@ function wakeHostViaFCM(deviceId) {
 wss.on('connection', (ws) => {
   let currentRoom = null;
   let currentRole = null;
+  ws.isAlive = true
+
+  ws.on('pong', () => { ws.isAlive = true })
 
   console.log('New connection!!');
 
   ws.on('message', (message, isBinary) => {
+    // binary = screenshot frame!!
     if (isBinary) {
       if (currentRoom && rooms[currentRoom]?.controller) {
         try {
           rooms[currentRoom].controller.send(message, { binary: true });
         } catch(e) {
-          console.log('Frame send error:', e);
+          console.log('Frame send error:', e.message);
         }
       }
       return;
@@ -77,7 +94,7 @@ wss.on('connection', (ws) => {
     try {
       data = JSON.parse(message.toString());
     } catch(e) {
-      console.log('Parse error:', e);
+      console.log('Parse error:', e.message);
       return;
     }
 
@@ -100,6 +117,7 @@ wss.on('connection', (ws) => {
 
       if (currentRole === 'host') {
         rooms[currentRoom].hostReady = true
+        // notify waiting controller!!
         if (rooms[currentRoom].controller) {
           rooms[currentRoom].controller.send(JSON.stringify({
             type: 'host-ready'
@@ -109,6 +127,7 @@ wss.on('connection', (ws) => {
 
       if (currentRole === 'controller') {
         if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
+          // host already online!! notify both!!
           rooms[currentRoom].host.send(JSON.stringify({
             type: 'peer-joined',
             role: 'controller'
@@ -172,9 +191,11 @@ wss.on('connection', (ws) => {
       }
     }
 
-    else if (data.type === 'touch' || data.type === 'keyboard' ||
-             data.type === 'system' || data.type === 'swipe' ||
-             data.type === 'scroll' || data.type === 'longpress') {
+    else if (
+      data.type === 'touch' || data.type === 'keyboard' ||
+      data.type === 'system' || data.type === 'swipe' ||
+      data.type === 'scroll' || data.type === 'longpress'
+    ) {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
@@ -196,7 +217,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('error', (err) => {
-    console.log('Error:', err);
+    console.log('WebSocket error:', err.message);
   });
 });
 
