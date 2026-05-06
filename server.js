@@ -1,6 +1,17 @@
 const WebSocket = require('ws');
 const http = require('http');
-const https = require('https');
+const admin = require('firebase-admin');
+
+// init firebase admin!!
+try {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('Firebase Admin initialized!!');
+} catch(e) {
+  console.log('Firebase Admin init failed:', e.message);
+}
 
 const server = http.createServer((req, res) => {
   res.writeHead(200);
@@ -10,75 +21,81 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
 const fcmTokens = {};
-const FCM_SERVER_KEY = '7c192da0f83f64a80b0d476eaafd87083990c6c0';
 
-// handle crashes gracefully!!
+// handle crashes!!
 process.on('uncaughtException', (err) => {
-  console.log('Uncaught exception:', err.message)
-})
+  console.log('Uncaught exception:', err.message);
+});
 process.on('unhandledRejection', (err) => {
-  console.log('Unhandled rejection:', err)
-})
+  console.log('Unhandled rejection:', err);
+});
 
-// keep connections alive + detect dead ones!!
+// detect dead connections!!
 const healthCheck = setInterval(() => {
   wss.clients.forEach(client => {
     if (client.isAlive === false) {
-      console.log('Terminating dead connection!!')
-      return client.terminate()
+      console.log('Terminating dead connection!!');
+      return client.terminate();
     }
-    client.isAlive = false
-    client.ping()
-  })
-}, 30000)
+    client.isAlive = false;
+    client.ping();
+  });
+}, 30000);
 
-wss.on('close', () => clearInterval(healthCheck))
+wss.on('close', () => clearInterval(healthCheck));
 
-function wakeHostViaFCM(deviceId) {
-  const token = fcmTokens[deviceId]
+// clean up empty rooms!!
+function cleanupRoom(roomId) {
+  if (rooms[roomId]) {
+    const room = rooms[roomId];
+    if (!room.host && !room.controller) {
+      delete rooms[roomId];
+      console.log('Cleaned up empty room:', roomId);
+    }
+  }
+}
+
+async function wakeHostViaFCM(deviceId) {
+  const token = fcmTokens[deviceId];
   if (!token) {
-    console.log('No FCM token for device:', deviceId)
-    return
+    console.log('No FCM token for device:', deviceId);
+    return;
   }
 
-  console.log('Sending FCM wake to:', deviceId)
+  console.log('Sending FCM wake to:', deviceId);
 
-  const payload = JSON.stringify({
-    to: token,
-    data: { type: 'wake', deviceId: deviceId },
-    priority: 'high',
-    time_to_live: 60
-  })
-
-  const options = {
-    hostname: 'fcm.googleapis.com',
-    path: '/fcm/send',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `key=${FCM_SERVER_KEY}`
+  try {
+    const response = await admin.messaging().send({
+      token: token,
+      data: {
+        type: 'wake',
+        deviceId: deviceId
+      },
+      android: {
+        priority: 'high',
+        ttl: 60000
+      }
+    });
+    console.log('FCM sent successfully:', response);
+  } catch(e) {
+    console.log('FCM error:', e.message);
+    if (e.code === 'messaging/registration-token-not-registered') {
+      delete fcmTokens[deviceId];
+      console.log('Removed expired FCM token for:', deviceId);
     }
   }
-
-  const req = https.request(options, (res) => {
-    console.log('FCM response:', res.statusCode)
-  })
-  req.on('error', (e) => console.log('FCM error:', e.message))
-  req.write(payload)
-  req.end()
 }
 
 wss.on('connection', (ws) => {
   let currentRoom = null;
   let currentRole = null;
-  ws.isAlive = true
+  ws.isAlive = true;
 
-  ws.on('pong', () => { ws.isAlive = true })
+  ws.on('pong', () => { ws.isAlive = true; });
 
   console.log('New connection!!');
 
   ws.on('message', (message, isBinary) => {
-    // binary = screenshot frame!!
     if (isBinary) {
       if (currentRoom && rooms[currentRoom]?.controller) {
         try {
@@ -116,40 +133,39 @@ wss.on('connection', (ws) => {
       console.log(`${currentRole} joined room ${currentRoom}`);
 
       if (currentRole === 'host') {
-        rooms[currentRoom].hostReady = true
-        // notify waiting controller!!
+        rooms[currentRoom].hostReady = true;
         if (rooms[currentRoom].controller) {
           rooms[currentRoom].controller.send(JSON.stringify({
             type: 'host-ready'
-          }))
+          }));
         }
       }
 
       if (currentRole === 'controller') {
         if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
-          // host already online!! notify both!!
           rooms[currentRoom].host.send(JSON.stringify({
             type: 'peer-joined',
             role: 'controller'
-          }))
-          ws.send(JSON.stringify({ type: 'host-ready' }))
+          }));
+          ws.send(JSON.stringify({ type: 'host-ready' }));
         } else {
-          // host offline!! wake via FCM!!
-          console.log('Host offline!! Waking via FCM!!')
-          wakeHostViaFCM(currentRoom)
-          ws.send(JSON.stringify({ type: 'waiting-for-host' }))
+          console.log('Host offline!! Waking via FCM!!');
+          wakeHostViaFCM(currentRoom).catch(e =>
+            console.log('FCM wake error:', e.message)
+          );
+          ws.send(JSON.stringify({ type: 'waiting-for-host' }));
         }
       }
     }
 
     else if (data.type === 'register-fcm') {
-      console.log('FCM token registered for:', data.deviceId)
-      fcmTokens[data.deviceId] = data.token
+      console.log('FCM token registered for:', data.deviceId);
+      fcmTokens[data.deviceId] = data.token;
     }
 
     else if (data.type === 'streaming-started') {
       if (rooms[currentRoom]?.controller) {
-        rooms[currentRoom].controller.send(JSON.stringify(data))
+        rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
 
@@ -206,13 +222,16 @@ wss.on('connection', (ws) => {
     console.log(`${currentRole} left room ${currentRoom}`);
     if (currentRoom && rooms[currentRoom]) {
       if (currentRole === 'host') {
-        rooms[currentRoom].hostReady = false
+        rooms[currentRoom].hostReady = false;
       }
       delete rooms[currentRoom][currentRole];
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
-        rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-left' }));
+        rooms[currentRoom][other].send(
+          JSON.stringify({ type: 'peer-left' })
+        );
       }
+      cleanupRoom(currentRoom);
     }
   });
 
