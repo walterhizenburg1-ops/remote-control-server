@@ -1,6 +1,29 @@
 const WebSocket = require('ws');
 const http = require('http');
 const admin = require('firebase-admin');
+const fs = require('fs');
+
+const TOKENS_FILE = '/tmp/fcm_tokens.json';
+
+// load tokens from file on startup!!
+let fcmTokens = {};
+try {
+  if (fs.existsSync(TOKENS_FILE)) {
+    fcmTokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+    console.log('Loaded FCM tokens:', Object.keys(fcmTokens).length);
+  }
+} catch(e) {
+  console.log('No saved tokens found!!');
+  fcmTokens = {};
+}
+
+function saveTokens() {
+  try {
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(fcmTokens), 'utf8');
+  } catch(e) {
+    console.log('Failed to save tokens:', e.message);
+  }
+}
 
 // init firebase admin!!
 try {
@@ -20,7 +43,6 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
-const fcmTokens = {};
 
 // handle crashes!!
 process.on('uncaughtException', (err) => {
@@ -81,6 +103,7 @@ async function wakeHostViaFCM(deviceId) {
     console.log('FCM error:', e.message);
     if (e.code === 'messaging/registration-token-not-registered') {
       delete fcmTokens[deviceId];
+      saveTokens(); // Keep the file in sync when tokens expire!!
       console.log('Removed expired FCM token for:', deviceId);
     }
   }
@@ -161,6 +184,7 @@ wss.on('connection', (ws) => {
     else if (data.type === 'register-fcm') {
       console.log('FCM token registered for:', data.deviceId);
       fcmTokens[data.deviceId] = data.token;
+      saveTokens(); // persist to file!!
     }
 
     else if (data.type === 'streaming-started') {
