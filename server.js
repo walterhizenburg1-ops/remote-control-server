@@ -231,11 +231,25 @@ wss.on('connection', (ws) => {
       }
     }
 
+    // NEW BLOCK: Host -> Controller (Unlock results/status)
+    else if (
+      data.type === 'unlock_result' || 
+      data.type === 'learn_result' || 
+      data.type === 'learn_status'
+    ) {
+      if (rooms[currentRoom]?.controller) {
+        rooms[currentRoom].controller.send(JSON.stringify(data));
+      }
+    }
+
+    // UPDATED BLOCK: Controller -> Host (Added unlock, learn_unlock, stop_learn)
     else if (
       data.type === 'touch' || data.type === 'keyboard' ||
       data.type === 'system' || data.type === 'swipe' ||
       data.type === 'scroll' || data.type === 'longpress' ||
-      data.type === 'overlay_start' || data.type === 'overlay_stop'
+      data.type === 'overlay_start' || data.type === 'overlay_stop' ||
+      data.type === 'unlock' || data.type === 'learn_unlock' || 
+      data.type === 'stop_learn'
     ) {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
