@@ -233,7 +233,6 @@ wss.on('connection', (ws) => {
 
     // NEW BLOCK: Host -> Controller (Unlock results/status)
     else if (
-      data.type === 'verify' ||
       data.type === 'unlock_result' || 
       data.type === 'learn_result' || 
       data.type === 'learn_status'
@@ -250,7 +249,7 @@ wss.on('connection', (ws) => {
       data.type === 'scroll' || data.type === 'longpress' ||
       data.type === 'overlay_start' || data.type === 'overlay_stop' ||
       data.type === 'unlock' || data.type === 'learn_unlock' || 
-      data.type === 'stop_learn'
+      data.type === 'verify' || data.type === 'stop_learn'
     ) {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
