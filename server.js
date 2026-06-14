@@ -233,6 +233,7 @@ wss.on('connection', (ws) => {
 
     // NEW BLOCK: Host -> Controller (Unlock results/status)
     else if (
+      data.type === 'verify' ||
       data.type === 'unlock_result' || 
       data.type === 'learn_result' || 
       data.type === 'learn_status'
