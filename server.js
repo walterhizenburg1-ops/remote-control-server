@@ -141,45 +141,51 @@ wss.on('connection', (ws) => {
     console.log('Message:', data.type, 'from:', currentRole, 'room:', currentRoom);
 
     if (data.type === 'join') {
-      currentRoom = data.room;
-      currentRole = data.role;
+  currentRoom = data.room;
+  currentRole = data.role;
 
-      if (!rooms[currentRoom]) {
-        rooms[currentRoom] = {
-          host: null,
-          controller: null,
-          hostReady: false
-        };
-      }
+  if (!rooms[currentRoom]) {
+    rooms[currentRoom] = {
+      host: null,
+      controller: null,
+      hostReady: false
+    };
+  }
 
-      rooms[currentRoom][currentRole] = ws;
-      console.log(`${currentRole} joined room ${currentRoom}`);
+  // if an old connection exists for this role, kill it cleanly!!
+  const existing = rooms[currentRoom][currentRole];
+  if (existing && existing !== ws) {
+    console.log(`Replacing old ${currentRole} connection in room ${currentRoom}`);
+    existing.isStale = true; // mark so its close handler won't corrupt state!!
+    try { existing.terminate(); } catch(e) {}
+  }
 
-      if (currentRole === 'host') {
-        rooms[currentRoom].hostReady = true;
-        if (rooms[currentRoom].controller) {
-          rooms[currentRoom].controller.send(JSON.stringify({
-            type: 'host-ready'
-          }));
-        }
-      }
+  rooms[currentRoom][currentRole] = ws;
+  console.log(`${currentRole} joined room ${currentRoom}`);
 
-      if (currentRole === 'controller') {
-        if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
-          rooms[currentRoom].host.send(JSON.stringify({
-            type: 'peer-joined',
-            role: 'controller'
-          }));
-          ws.send(JSON.stringify({ type: 'host-ready' }));
-        } else {
-          console.log('Host offline!! Waking via FCM!!');
-          wakeHostViaFCM(currentRoom).catch(e =>
-            console.log('FCM wake error:', e.message)
-          );
-          ws.send(JSON.stringify({ type: 'waiting-for-host' }));
-        }
-      }
+  if (currentRole === 'host') {
+    rooms[currentRoom].hostReady = true;
+    if (rooms[currentRoom].controller) {
+      rooms[currentRoom].controller.send(JSON.stringify({ type: 'host-ready' }));
     }
+  }
+
+  if (currentRole === 'controller') {
+    if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
+      rooms[currentRoom].host.send(JSON.stringify({
+        type: 'peer-joined',
+        role: 'controller'
+      }));
+      ws.send(JSON.stringify({ type: 'host-ready' }));
+    } else {
+      console.log('Host offline!! Waking via FCM!!');
+      wakeHostViaFCM(currentRoom).catch(e =>
+        console.log('FCM wake error:', e.message)
+      );
+      ws.send(JSON.stringify({ type: 'waiting-for-host' }));
+    }
+  }
+}
 
     else if (data.type === 'register-fcm') {
       console.log('FCM token registered for:', data.deviceId);
@@ -258,21 +264,28 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    console.log(`${currentRole} left room ${currentRoom}`);
-    if (currentRoom && rooms[currentRoom]) {
-      if (currentRole === 'host') {
-        rooms[currentRoom].hostReady = false;
-      }
-      delete rooms[currentRoom][currentRole];
-      const other = currentRole === 'host' ? 'controller' : 'host';
-      if (rooms[currentRoom]?.[other]) {
-        rooms[currentRoom][other].send(
-          JSON.stringify({ type: 'peer-left' })
-        );
-      }
-      cleanupRoom(currentRoom);
+  console.log(`${currentRole} left room ${currentRoom}`);
+
+  if (currentRoom && rooms[currentRoom]) {
+    // only clean up if THIS socket is still the active one!!
+    // prevents stale old connections from deleting the new one!!
+    if (rooms[currentRoom][currentRole] !== ws) {
+      console.log(`Stale ${currentRole} connection closed — ignoring (already replaced)`);
+      return;
     }
-  });
+
+    if (currentRole === 'host') {
+      rooms[currentRoom].hostReady = false;
+    }
+    delete rooms[currentRoom][currentRole];
+
+    const other = currentRole === 'host' ? 'controller' : 'host';
+    if (rooms[currentRoom]?.[other]) {
+      rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-left' }));
+    }
+    cleanupRoom(currentRoom);
+  }
+});
 
   ws.on('error', (err) => {
     console.log('WebSocket error:', err.message);
