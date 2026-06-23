@@ -73,6 +73,26 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(devices));
   }
+  // Handle permanent deletion!!
+  if (req.method === 'DELETE' && req.url.startsWith('/delete-device/')) {
+    // Format: /delete-device/MASTER_ID/DEVICE_ID
+    const parts = req.url.split('/');
+    const masterId = parts[2];
+    const deviceId = parts[3];
+
+    if (fleetDevices[masterId]) {
+      // Remove it from the list!!
+      fleetDevices[masterId] = fleetDevices[masterId].filter(d => d.id !== deviceId);
+      saveFleet(); // Persist changes to disk!!
+      console.log(`🗑️ Permanently deleted device ${deviceId} from fleet ${masterId}`);
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true }));
+    } else {
+      res.writeHead(404);
+      return res.end('Fleet not found');
+    }
+  }
 
   res.writeHead(200);
   res.end('Remote Control Server Running!!');
