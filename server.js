@@ -4,6 +4,7 @@ const admin = require('firebase-admin');
 const fs = require('fs');
 
 const TOKENS_FILE = '/tmp/fcm_tokens.json';
+const FLEET_FILE = '/tmp/fleet_devices.json';
 
 // load tokens from file on startup!!
 let fcmTokens = {};
@@ -24,6 +25,25 @@ function saveTokens() {
     console.log('Failed to save tokens:', e.message);
   }
 }
+// load fleet from file on startup!!
+let fleetDevices = {};
+try {
+  if (fs.existsSync(FLEET_FILE)) {
+    fleetDevices = JSON.parse(fs.readFileSync(FLEET_FILE, 'utf8'));
+    console.log('Loaded Fleet Devices:', Object.keys(fleetDevices).length);
+  }
+} catch(e) {
+  console.log('No saved fleet found!!');
+  fleetDevices = {};
+}
+
+function saveFleet() {
+  try {
+    fs.writeFileSync(FLEET_FILE, JSON.stringify(fleetDevices), 'utf8');
+  } catch(e) {
+    console.log('Failed to save fleet:', e.message);
+  }
+}
 
 // init firebase admin!!
 try {
@@ -37,6 +57,23 @@ try {
 }
 
 const server = http.createServer((req, res) => {
+  // Allow Electron to fetch this without CORS errors
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    return res.end();
+  }
+
+  // The Controller asks for its devices
+  if (req.url.startsWith('/fleet/')) {
+    const masterId = req.url.split('/')[2];
+    const devices = fleetDevices[masterId] || [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(devices));
+  }
+
   res.writeHead(200);
   res.end('Remote Control Server Running!!');
 });
@@ -191,6 +228,21 @@ wss.on('connection', (ws) => {
       console.log('FCM token registered for:', data.deviceId);
       fcmTokens[data.deviceId] = data.token;
       saveTokens(); // persist to file!!
+    }
+      else if (data.type === 'register-host') {
+      const mid = data.masterId;
+      if (!fleetDevices[mid]) fleetDevices[mid] = [];
+      
+      // Prevent duplicates, but update the name if it changed
+      const exists = fleetDevices[mid].find(d => d.id === data.deviceId);
+      if (!exists) {
+        fleetDevices[mid].push({ id: data.deviceId, name: data.name, addedAt: Date.now() });
+        saveFleet();
+        console.log(`🆕 Host ${data.name} auto-registered to Fleet ${mid}`);
+      } else if (exists.name !== data.name) {
+        exists.name = data.name;
+        saveFleet();
+      }
     }
 
     else if (data.type === 'streaming-started') {
