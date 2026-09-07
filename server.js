@@ -320,14 +320,15 @@ wss.on('connection', (ws) => {
       }
     }
 
-    // UPDATED BLOCK: Controller -> Host (Added unlock, learn_unlock, stop_learn)
+    // UPDATED BLOCK: Controller -> Host (Added unlock, learn_unlock, stop_learn, screen_on, screen_off)
     else if (
       data.type === 'touch' || data.type === 'keyboard' ||
       data.type === 'system' || data.type === 'swipe' ||
       data.type === 'scroll' || data.type === 'longpress' ||
       data.type === 'overlay_start' || data.type === 'overlay_stop' ||
       data.type === 'unlock' || data.type === 'learn_unlock' || 
-      data.type === 'verify' || data.type === 'stop_learn'
+      data.type === 'verify' || data.type === 'stop_learn' ||
+      data.type === 'screen_on' || data.type === 'screen_off'
     ) {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
