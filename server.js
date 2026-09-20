@@ -66,6 +66,24 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
+  // ============================================================
+  // EDIT 2: HTTP route for /status
+  // ============================================================
+  if (req.method === 'GET' && req.url.startsWith('/status')) {
+    const u = new URL(req.url, 'http://localhost');
+    const ids = (u.searchParams.get('ids') || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => /^[A-Za-z0-9-]{4,32}$/.test(s))
+      .slice(0, 100);
+
+    const out = {};
+    ids.forEach(id => { out[id] = getDeviceStatus(id); });
+
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify(out));
+  }
+
   // The Controller asks for its devices
   if (req.url.startsWith('/fleet/')) {
     const masterId = req.url.split('/')[2];
@@ -73,6 +91,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(devices));
   }
+
   // Handle permanent deletion!!
   if (req.method === 'DELETE' && req.url.startsWith('/delete-device/')) {
     // Format: /delete-device/MASTER_ID/DEVICE_ID
@@ -84,7 +103,7 @@ const server = http.createServer((req, res) => {
       // Remove it from the list!!
       fleetDevices[masterId] = fleetDevices[masterId].filter(d => d.id !== deviceId);
       saveFleet(); // Persist changes to disk!!
-      console.log(`🗑️ Permanently deleted device ${deviceId} from fleet ${masterId}`);
+      console.log(`🗑 Permanently deleted device ${deviceId} from fleet ${masterId}`);
       
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true }));
@@ -100,6 +119,53 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
+
+// ============================================================
+// EDIT 1: Device Status Management
+// ============================================================
+const SEEN_FILE = '/tmp/last_seen.json';
+let lastSeen = {};
+let seenDirty = false;
+try {
+  if (fs.existsSync(SEEN_FILE)) lastSeen = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf8'));
+} catch (e) {
+  lastSeen = {};
+}
+
+function touchSeen(deviceId) {
+  lastSeen[deviceId] = Date.now();
+  seenDirty = true;
+}
+
+// write to disk at most every 30s (not on every pong)
+setInterval(() => {
+  if (!seenDirty) return;
+  seenDirty = false;
+  try {
+    fs.writeFileSync(SEEN_FILE, JSON.stringify(lastSeen), 'utf8');
+  } catch (e) {
+    console.log('Failed to save lastSeen:', e.message);
+  }
+}, 30000);
+
+// online   = host socket connected, nobody controlling it
+// busy     = host connected AND a controller is already connected
+// standby  = host not connected, but we have an FCM token (we can try to wake it)
+// offline  = host not connected and no way to wake it
+function getDeviceStatus(id) {
+  const room = rooms[id];
+  const hostOnline = !!(room && room.host && room.hostReady &&
+                        room.host.readyState === WebSocket.OPEN);
+  const controllerOn = !!(room && room.controller &&
+                          room.controller.readyState === WebSocket.OPEN);
+
+  let state;
+  if (hostOnline) state = controllerOn ? 'busy' : 'online';
+  else state = fcmTokens[id] ? 'standby' : 'offline';
+
+  const seen = hostOnline ? Date.now() : (lastSeen[id] || null);
+  return { state, lastSeenAgoMs: seen ? Date.now() - seen : null };
+}
 
 // handle crashes!!
 process.on('uncaughtException', (err) => {
@@ -142,7 +208,6 @@ async function wakeHostViaFCM(deviceId) {
   }
 
   console.log('Sending FCM wake to:', deviceId);
-
   try {
     const response = await admin.messaging().send({
       token: token,
@@ -171,7 +236,14 @@ wss.on('connection', (ws) => {
   let currentRole = null;
   ws.isAlive = true;
 
-  ws.on('pong', () => { ws.isAlive = true; });
+  // ============================================================
+  // EDIT 3: Replace pong handler
+  // ============================================================
+  ws.on('pong', () => {
+    ws.isAlive = true;
+    // every 30s the phone answers our ping -> fresh "last seen"
+    if (currentRole === 'host' && currentRoom) touchSeen(currentRoom);
+  });
 
   console.log('New connection!!');
 
@@ -195,61 +267,77 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    console.log('Message:', data.type, 'from:', currentRole, 'room:', currentRoom);
+    // ============================================================
+    // EDIT 5: ping/pong handler and reduced logging
+    // ============================================================
+    if (data.type === 'ping') {
+      try { ws.send(JSON.stringify({ type: 'pong', t: data.t })); } catch (e) {}
+      return;
+    }
+
+    if (data.type !== 'drag_move' && data.type !== 'scroll') {
+      console.log('Message:', data.type, 'from:', currentRole, 'room:', currentRoom);
+    }
 
     if (data.type === 'join') {
-  currentRoom = data.room;
-  currentRole = data.role;
+      currentRoom = data.room;
+      currentRole = data.role;
 
-  if (!rooms[currentRoom]) {
-    rooms[currentRoom] = {
-      host: null,
-      controller: null,
-      hostReady: false
-    };
-  }
+      if (!rooms[currentRoom]) {
+        rooms[currentRoom] = {
+          host: null,
+          controller: null,
+          hostReady: false
+        };
+      }
 
-  // if an old connection exists for this role, kill it cleanly!!
-  const existing = rooms[currentRoom][currentRole];
-  if (existing && existing !== ws) {
-    console.log(`Replacing old ${currentRole} connection in room ${currentRoom}`);
-    existing.isStale = true; // mark so its close handler won't corrupt state!!
-    try { existing.terminate(); } catch(e) {}
-  }
+      // if an old connection exists for this role, kill it cleanly!!
+      const existing = rooms[currentRoom][currentRole];
+      if (existing && existing !== ws) {
+        console.log(`Replacing old ${currentRole} connection in room ${currentRoom}`);
+        existing.isStale = true; // mark so its close handler won't corrupt state!!
+        try { existing.terminate(); } catch(e) {}
+      }
 
-  rooms[currentRoom][currentRole] = ws;
-  console.log(`${currentRole} joined room ${currentRoom}`);
+      rooms[currentRoom][currentRole] = ws;
+      
+      // ============================================================
+      // EDIT 4a: Update last seen on host join
+      // ============================================================
+      if (currentRole === 'host') touchSeen(currentRoom);
+      
+      console.log(`${currentRole} joined room ${currentRoom}`);
 
-  if (currentRole === 'host') {
-    rooms[currentRoom].hostReady = true;
-    if (rooms[currentRoom].controller) {
-      rooms[currentRoom].controller.send(JSON.stringify({ type: 'host-ready' }));
+      if (currentRole === 'host') {
+        rooms[currentRoom].hostReady = true;
+        if (rooms[currentRoom].controller) {
+          rooms[currentRoom].controller.send(JSON.stringify({ type: 'host-ready' }));
+        }
+      }
+
+      if (currentRole === 'controller') {
+        if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
+          rooms[currentRoom].host.send(JSON.stringify({
+            type: 'peer-joined',
+            role: 'controller'
+          }));
+          ws.send(JSON.stringify({ type: 'host-ready' }));
+        } else {
+          console.log('Host offline!! Waking via FCM!!');
+          wakeHostViaFCM(currentRoom).catch(e =>
+            console.log('FCM wake error:', e.message)
+          );
+          ws.send(JSON.stringify({ type: 'waiting-for-host' }));
+        }
+      }
     }
-  }
-
-  if (currentRole === 'controller') {
-    if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
-      rooms[currentRoom].host.send(JSON.stringify({
-        type: 'peer-joined',
-        role: 'controller'
-      }));
-      ws.send(JSON.stringify({ type: 'host-ready' }));
-    } else {
-      console.log('Host offline!! Waking via FCM!!');
-      wakeHostViaFCM(currentRoom).catch(e =>
-        console.log('FCM wake error:', e.message)
-      );
-      ws.send(JSON.stringify({ type: 'waiting-for-host' }));
-    }
-  }
-}
 
     else if (data.type === 'register-fcm') {
       console.log('FCM token registered for:', data.deviceId);
       fcmTokens[data.deviceId] = data.token;
       saveTokens(); // persist to file!!
     }
-      else if (data.type === 'register-host') {
+    else if (data.type === 'register-host') {
       const mid = data.masterId;
       if (!fleetDevices[mid]) fleetDevices[mid] = [];
       
@@ -282,7 +370,6 @@ wss.on('connection', (ws) => {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'ice') {
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
@@ -328,8 +415,8 @@ wss.on('connection', (ws) => {
       data.type === 'overlay_start' || data.type === 'overlay_stop' ||
       data.type === 'unlock' || data.type === 'learn_unlock' || 
       data.type === 'verify' || data.type === 'stop_learn' ||
-      data.type === 'screen_on' || data.type === 'screen_off'||
-      data.type === 'drag_start' || data.type === 'drag_move'||
+      data.type === 'screen_on' || data.type === 'screen_off' ||
+      data.type === 'drag_start' || data.type === 'drag_move' ||
       data.type === 'drag_end'
     ) {
       if (rooms[currentRoom]?.host) {
@@ -339,28 +426,34 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-  console.log(`${currentRole} left room ${currentRoom}`);
+    console.log(`${currentRole} left room ${currentRoom}`);
 
-  if (currentRoom && rooms[currentRoom]) {
-    // only clean up if THIS socket is still the active one!!
-    // prevents stale old connections from deleting the new one!!
-    if (rooms[currentRoom][currentRole] !== ws) {
-      console.log(`Stale ${currentRole} connection closed — ignoring (already replaced)`);
-      return;
-    }
+    if (currentRoom && rooms[currentRoom]) {
+      // only clean up if THIS socket is still the active one!!
+      // prevents stale old connections from deleting the new one!!
+      if (rooms[currentRoom][currentRole] !== ws) {
+        console.log(`Stale ${currentRole} connection closed — ignoring (already replaced)`);
+        
+        // ============================================================
+        // EDIT 4b: Update last seen on stale socket close
+        // ============================================================
+        if (currentRole === 'host') touchSeen(currentRoom);
+        
+        return;
+      }
 
-    if (currentRole === 'host') {
-      rooms[currentRoom].hostReady = false;
-    }
-    delete rooms[currentRoom][currentRole];
+      if (currentRole === 'host') {
+        rooms[currentRoom].hostReady = false;
+      }
+      delete rooms[currentRoom][currentRole];
 
-    const other = currentRole === 'host' ? 'controller' : 'host';
-    if (rooms[currentRoom]?.[other]) {
-      rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-left' }));
+      const other = currentRole === 'host' ? 'controller' : 'host';
+      if (rooms[currentRoom]?.[other]) {
+        rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-left' }));
+      }
+      cleanupRoom(currentRoom);
     }
-    cleanupRoom(currentRoom);
-  }
-});
+  });
 
   ws.on('error', (err) => {
     console.log('WebSocket error:', err.message);
