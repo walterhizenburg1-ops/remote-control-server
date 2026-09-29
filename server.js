@@ -2,9 +2,200 @@ const WebSocket = require('ws');
 const http = require('http');
 const admin = require('firebase-admin');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+const yauzl = require('yauzl');
+const yazl = require('yazl');
+const QRCode = require('qrcode');
 
 const TOKENS_FILE = '/tmp/fcm_tokens.json';
 const FLEET_FILE = '/tmp/fleet_devices.json';
+
+// ═══════════════════════════════════════════════════════════════════════
+//  APK BUILDER  —  per-controller signed APK generation
+// ═══════════════════════════════════════════════════════════════════════
+const TEMPLATE_APK = path.join(__dirname, 'template.apk');
+const APK_SIGNER_JAR = path.join(__dirname, 'uber-apk-signer.jar');
+const BUILD_DIR = path.join(os.tmpdir(), 'apk-builds');
+const PLACEHOLDER_KEY = 'CMD-00000000';
+const KEY_ALIAS = process.env.KEY_ALIAS || 'remotelink';
+
+// Cache: masterId -> { path, size, builtAt }
+const apkCache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000;   // 30 min — /tmp is ephemeral anyway
+
+// Simple lock so two simultaneous builds don't OOM the box
+let buildInProgress = false;
+
+// Keystore lives in env var (base64) — decoded to /tmp at boot
+let KEYSTORE_PATH = null;
+(function initKeystore() {
+  try {
+    const b64 = process.env.KEYSTORE_B64;
+    if (!b64) {
+      console.log('⚠  KEYSTORE_B64 not set — APK build endpoint will refuse to sign');
+      return;
+    }
+    const buf = Buffer.from(b64.trim(), 'base64');
+    const p = path.join(os.tmpdir(), 'release.jks');
+    fs.writeFileSync(p, buf);
+    KEYSTORE_PATH = p;
+    console.log('🔐 Keystore decoded:', buf.length, 'bytes →', p);
+  } catch (e) {
+    console.log('❌ Keystore decode failed:', e.message);
+  }
+})();
+
+// Ensure build dir exists
+try { fs.mkdirSync(BUILD_DIR, { recursive: true }); } catch (_) {}
+
+// Validate masterId strictly — must look like CMD-XXXXXXXX
+function isValidMasterId(id) {
+  return typeof id === 'string' && /^CMD-[A-Z0-9]{8}$/.test(id);
+}
+
+// ── 1. Patch the placeholder key inside the template APK ──────────────
+//     Streams entries through yauzl→yazl so we never hold the full APK
+//     in RAM twice.
+function patchApk(templatePath, outPath, masterId) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(templatePath, { lazyEntries: true }, (err, zipFile) => {
+      if (err) return reject(err);
+
+      const outZip = new yazl.ZipFile();
+      const outStream = fs.createWriteStream(outPath);
+      outZip.outputStream.pipe(outStream);
+
+      let settled = false;
+      function fail(e) {
+        if (settled) return;
+        settled = true;
+        try { zipFile.close(); } catch (_) {}
+        try { outStream.destroy(); } catch (_) {}
+        reject(e);
+      }
+
+      outStream.on('close', () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      });
+      outStream.on('error', fail);
+      outZip.outputStream.on('error', fail);
+
+      zipFile.on('error', fail);
+      zipFile.on('entry', (entry) => {
+        const name = entry.fileName;
+
+        // Patch the master key asset
+        if (name === 'assets/master_config.json') {
+          zipFile.openReadStream(entry, (err2, rs) => {
+            if (err2) return fail(err2);
+            const chunks = [];
+            rs.on('data', (c) => chunks.push(c));
+            rs.on('end', () => {
+              const original = Buffer.concat(chunks).toString('utf8');
+              const patched = original.replace(PLACEHOLDER_KEY, masterId);
+              outZip.addBuffer(Buffer.from(patched, 'utf8'), name);
+              zipFile.readEntry();
+            });
+            rs.on('error', fail);
+          });
+          return;
+        }
+
+        // Everything else streams through untouched
+        zipFile.openReadStream(entry, (err2, rs) => {
+          if (err2) return fail(err2);
+          outZip.addReadStream(rs, name);
+          rs.on('end', () => zipFile.readEntry());
+          rs.on('error', fail);
+        });
+      });
+
+      zipFile.on('end', () => {
+        try { outZip.end(); } catch (e) { fail(e); }
+      });
+
+      zipFile.readEntry();
+    });
+  });
+}
+
+// ── 2. Sign the patched APK with uber-apk-signer ─────────────────────
+function signApk(inputApk, outDir) {
+  return new Promise((resolve, reject) => {
+    if (!KEYSTORE_PATH) return reject(new Error('Keystore not available'));
+    const ksPass = process.env.KEYSTORE_PASSWORD;
+    if (!ksPass) return reject(new Error('KEYSTORE_PASSWORD env missing'));
+    const keyPass = process.env.KEY_PASSWORD || ksPass;
+
+    const args = [
+      '-Xmx192m',
+      '-jar', APK_SIGNER_JAR,
+      '--apks', inputApk,
+      '--ks', KEYSTORE_PATH,
+      '--ksAlias', KEY_ALIAS,
+      '--ksPass', ksPass,
+      '--ksKeyPass', keyPass,
+      '--out', outDir,
+      '--overwrite',
+      '--allowResign',
+    ];
+
+    execFile('java', args, { timeout: 90000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        return reject(new Error(`apk-signer failed: ${err.message}\n${(stderr || '').slice(0, 800)}`));
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+// ── 3. Full build pipeline (patch → sign → cache) ────────────────────
+async function buildApkForMaster(masterId) {
+  // Return cached build if still fresh
+  const cached = apkCache.get(masterId);
+  if (cached && (Date.now() - cached.builtAt) < CACHE_TTL_MS && fs.existsSync(cached.path)) {
+    return cached;
+  }
+
+  if (buildInProgress) {
+    throw new Error('Another build is in progress — try again in a few seconds');
+  }
+  buildInProgress = true;
+
+  const buildId = crypto.randomBytes(6).toString('hex');
+  const patchedPath = path.join(BUILD_DIR, `patched-${buildId}.apk`);
+  const signOutDir = path.join(BUILD_DIR, `signed-${buildId}`);
+  fs.mkdirSync(signOutDir, { recursive: true });
+
+  try {
+    // 1. Patch
+    await patchApk(TEMPLATE_APK, patchedPath, masterId);
+
+    // 2. Sign
+    await signApk(patchedPath, signOutDir);
+
+    // 3. Find the signed output (uber-apk-signer names it <name>-aligned-signed.apk)
+    const files = fs.readdirSync(signOutDir);
+    const signedName = files.find(f => f.endsWith('-signed.apk')) || files.find(f => f.endsWith('.apk'));
+    if (!signedName) throw new Error('Signer produced no .apk output');
+    const signedPath = path.join(signOutDir, signedName);
+    const size = fs.statSync(signedPath).size;
+
+    // 4. Cache
+    const rec = { path: signedPath, size, builtAt: Date.now() };
+    apkCache.set(masterId, rec);
+    return rec;
+  } finally {
+    // Always remove the intermediate patched file
+    try { fs.unlinkSync(patchedPath); } catch (_) {}
+    buildInProgress = false;
+  }
+}
 
 // load tokens from file on startup!!
 let fcmTokens = {};
@@ -17,7 +208,6 @@ try {
   console.log('No saved tokens found!!');
   fcmTokens = {};
 }
-
 function saveTokens() {
   try {
     fs.writeFileSync(TOKENS_FILE, JSON.stringify(fcmTokens), 'utf8');
@@ -36,7 +226,6 @@ try {
   console.log('No saved fleet found!!');
   fleetDevices = {};
 }
-
 function saveFleet() {
   try {
     fs.writeFileSync(FLEET_FILE, JSON.stringify(fleetDevices), 'utf8');
@@ -44,7 +233,6 @@ function saveFleet() {
     console.log('Failed to save fleet:', e.message);
   }
 }
-
 // init firebase admin!!
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
@@ -55,17 +243,14 @@ try {
 } catch(e) {
   console.log('Firebase Admin init failed:', e.message);
 }
-
 const server = http.createServer((req, res) => {
   // Allow Electron to fetch this without CORS errors
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     return res.end();
   }
-
   // ============================================================
   // EDIT 2: HTTP route for /status
   // ============================================================
@@ -76,12 +261,64 @@ const server = http.createServer((req, res) => {
       .map(s => s.trim())
       .filter(s => /^[A-Za-z0-9-]{4,32}$/.test(s))
       .slice(0, 100);
-
     const out = {};
     ids.forEach(id => { out[id] = getDeviceStatus(id); });
-
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify(out));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  GET /apk/:masterId      → signed APK built for that master
+  //  GET /apk-qr/:masterId   → SVG QR code pointing at the APK URL
+  // ══════════════════════════════════════════════════════════════════════
+
+  if (req.method === 'GET' && req.url.startsWith('/apk-qr/')) {
+    const masterId = (req.url.split('/')[2] || '').trim().toUpperCase();
+    if (!isValidMasterId(masterId)) {
+      res.writeHead(400); return res.end('Invalid masterId');
+    }
+    const host = req.headers.host || 'localhost';
+    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+    const apkUrl = `${proto}://${host}/apk/${masterId}`;
+    QRCode.toString(apkUrl, { type: 'svg', margin: 1, width: 320 }, (err, svg) => {
+      if (err) { res.writeHead(500); return res.end('QR generation failed'); }
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=300' });
+      res.end(svg);
+    });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url.startsWith('/apk/')) {
+    const masterId = (req.url.split('/')[2] || '').trim().toUpperCase();
+    if (!isValidMasterId(masterId)) {
+      res.writeHead(400); return res.end('Invalid masterId');
+    }
+    if (!KEYSTORE_PATH) {
+      res.writeHead(503); return res.end('APK builder not configured on server');
+    }
+
+    console.log(`📦 APK build requested for ${masterId}`);
+    const t0 = Date.now();
+
+    buildApkForMaster(masterId)
+      .then((rec) => {
+        const ms = Date.now() - t0;
+        console.log(`✅ Built ${masterId} in ${ms}ms — ${(rec.size / 1024 / 1024).toFixed(1)} MB`);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.android.package-archive',
+          'Content-Length': rec.size,
+          'Content-Disposition': `attachment; filename="RemoteLink-${masterId}.apk"`,
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+        });
+        fs.createReadStream(rec.path).pipe(res);
+      })
+      .catch((err) => {
+        console.error(`❌ APK build failed for ${masterId}:`, err.message);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('APK build failed: ' + err.message);
+      });
+    return;
   }
 
   // The Controller asks for its devices
@@ -91,14 +328,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(devices));
   }
-
   // Handle permanent deletion!!
   if (req.method === 'DELETE' && req.url.startsWith('/delete-device/')) {
     // Format: /delete-device/MASTER_ID/DEVICE_ID
     const parts = req.url.split('/');
     const masterId = parts[2];
     const deviceId = parts[3];
-
     if (fleetDevices[masterId]) {
       // Remove it from the list!!
       fleetDevices[masterId] = fleetDevices[masterId].filter(d => d.id !== deviceId);
@@ -112,14 +347,11 @@ const server = http.createServer((req, res) => {
       return res.end('Fleet not found');
     }
   }
-
   res.writeHead(200);
   res.end('Remote Control Server Running!!');
 });
-
 const wss = new WebSocket.Server({ server, maxPayload: 10 * 1024 * 1024 });
 const rooms = {};
-
 // ============================================================
 // EDIT 1: Device Status Management
 // ============================================================
@@ -131,12 +363,10 @@ try {
 } catch (e) {
   lastSeen = {};
 }
-
 function touchSeen(deviceId) {
   lastSeen[deviceId] = Date.now();
   seenDirty = true;
 }
-
 // write to disk at most every 30s (not on every pong)
 setInterval(() => {
   if (!seenDirty) return;
@@ -147,7 +377,6 @@ setInterval(() => {
     console.log('Failed to save lastSeen:', e.message);
   }
 }, 30000);
-
 // online   = host socket connected, nobody controlling it
 // busy     = host connected AND a controller is already connected
 // standby  = host not connected, but we have an FCM token (we can try to wake it)
@@ -158,15 +387,12 @@ function getDeviceStatus(id) {
                         room.host.readyState === WebSocket.OPEN);
   const controllerOn = !!(room && room.controller &&
                           room.controller.readyState === WebSocket.OPEN);
-
   let state;
   if (hostOnline) state = controllerOn ? 'busy' : 'online';
   else state = fcmTokens[id] ? 'standby' : 'offline';
-
   const seen = hostOnline ? Date.now() : (lastSeen[id] || null);
   return { state, lastSeenAgoMs: seen ? Date.now() - seen : null };
 }
-
 // handle crashes!!
 process.on('uncaughtException', (err) => {
   console.log('Uncaught exception:', err.message);
@@ -174,7 +400,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.log('Unhandled rejection:', err);
 });
-
 // detect dead connections!!
 const healthCheck = setInterval(() => {
   wss.clients.forEach(client => {
@@ -186,9 +411,7 @@ const healthCheck = setInterval(() => {
     client.ping();
   });
 }, 30000);
-
 wss.on('close', () => clearInterval(healthCheck));
-
 // clean up empty rooms!!
 function cleanupRoom(roomId) {
   if (rooms[roomId]) {
@@ -199,14 +422,12 @@ function cleanupRoom(roomId) {
     }
   }
 }
-
 async function wakeHostViaFCM(deviceId) {
   const token = fcmTokens[deviceId];
   if (!token) {
     console.log('No FCM token for device:', deviceId);
     return;
   }
-
   console.log('Sending FCM wake to:', deviceId);
   try {
     const response = await admin.messaging().send({
@@ -230,12 +451,10 @@ async function wakeHostViaFCM(deviceId) {
     }
   }
 }
-
 wss.on('connection', (ws) => {
   let currentRoom = null;
   let currentRole = null;
   ws.isAlive = true;
-
   // ============================================================
   // EDIT 3: Replace pong handler
   // ============================================================
@@ -244,9 +463,7 @@ wss.on('connection', (ws) => {
     // every 30s the phone answers our ping -> fresh "last seen"
     if (currentRole === 'host' && currentRoom) touchSeen(currentRoom);
   });
-
   console.log('New connection!!');
-
   ws.on('message', (message, isBinary) => {
     if (isBinary) {
       if (currentRoom && rooms[currentRoom]?.controller) {
@@ -258,7 +475,6 @@ wss.on('connection', (ws) => {
       }
       return;
     }
-
     let data;
     try {
       data = JSON.parse(message.toString());
@@ -266,7 +482,6 @@ wss.on('connection', (ws) => {
       console.log('Parse error:', e.message);
       return;
     }
-
     // ============================================================
     // EDIT 5: ping/pong handler and reduced logging
     // ============================================================
@@ -274,15 +489,12 @@ wss.on('connection', (ws) => {
       try { ws.send(JSON.stringify({ type: 'pong', t: data.t })); } catch (e) {}
       return;
     }
-
     if (data.type !== 'drag_move' && data.type !== 'scroll') {
       console.log('Message:', data.type, 'from:', currentRole, 'room:', currentRoom);
     }
-
     if (data.type === 'join') {
       currentRoom = data.room;
       currentRole = data.role;
-
       if (!rooms[currentRoom]) {
         rooms[currentRoom] = {
           host: null,
@@ -290,7 +502,6 @@ wss.on('connection', (ws) => {
           hostReady: false
         };
       }
-
       // if an old connection exists for this role, kill it cleanly!!
       const existing = rooms[currentRoom][currentRole];
       if (existing && existing !== ws) {
@@ -298,7 +509,6 @@ wss.on('connection', (ws) => {
         existing.isStale = true; // mark so its close handler won't corrupt state!!
         try { existing.terminate(); } catch(e) {}
       }
-
       rooms[currentRoom][currentRole] = ws;
       
       // ============================================================
@@ -307,14 +517,12 @@ wss.on('connection', (ws) => {
       if (currentRole === 'host') touchSeen(currentRoom);
       
       console.log(`${currentRole} joined room ${currentRoom}`);
-
       if (currentRole === 'host') {
         rooms[currentRoom].hostReady = true;
         if (rooms[currentRoom].controller) {
           rooms[currentRoom].controller.send(JSON.stringify({ type: 'host-ready' }));
         }
       }
-
       if (currentRole === 'controller') {
         if (rooms[currentRoom].hostReady && rooms[currentRoom].host) {
           rooms[currentRoom].host.send(JSON.stringify({
@@ -331,7 +539,6 @@ wss.on('connection', (ws) => {
         }
       }
     }
-
     else if (data.type === 'register-fcm') {
       console.log('FCM token registered for:', data.deviceId);
       fcmTokens[data.deviceId] = data.token;
@@ -352,19 +559,16 @@ wss.on('connection', (ws) => {
         saveFleet();
       }
     }
-
     else if (data.type === 'streaming-started') {
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'offer') {
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'answer') {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
@@ -376,26 +580,22 @@ wss.on('connection', (ws) => {
         rooms[currentRoom][other].send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'dimensions') {
       if (rooms[currentRoom]?.controller) {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'mode') {
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify(data));
       }
     }
-
     else if (data.type === 'stream-mode-choice') {
       if (rooms[currentRoom]?.host) {
         rooms[currentRoom].host.send(JSON.stringify(data));
       }
     }
-
     // NEW BLOCK: Host -> Controller (Unlock results/status)
     else if (
       data.type === 'unlock_result' || 
@@ -406,7 +606,6 @@ wss.on('connection', (ws) => {
         rooms[currentRoom].controller.send(JSON.stringify(data));
       }
     }
-
     // UPDATED BLOCK: Controller -> Host (Added unlock, learn_unlock, stop_learn, screen_on, screen_off)
     else if (
       data.type === 'touch' || data.type === 'keyboard' ||
@@ -424,10 +623,8 @@ wss.on('connection', (ws) => {
       }
     }
   });
-
   ws.on('close', () => {
     console.log(`${currentRole} left room ${currentRoom}`);
-
     if (currentRoom && rooms[currentRoom]) {
       // only clean up if THIS socket is still the active one!!
       // prevents stale old connections from deleting the new one!!
@@ -441,12 +638,10 @@ wss.on('connection', (ws) => {
         
         return;
       }
-
       if (currentRole === 'host') {
         rooms[currentRoom].hostReady = false;
       }
       delete rooms[currentRoom][currentRole];
-
       const other = currentRole === 'host' ? 'controller' : 'host';
       if (rooms[currentRoom]?.[other]) {
         rooms[currentRoom][other].send(JSON.stringify({ type: 'peer-left' }));
@@ -454,11 +649,9 @@ wss.on('connection', (ws) => {
       cleanupRoom(currentRoom);
     }
   });
-
   ws.on('error', (err) => {
     console.log('WebSocket error:', err.message);
   });
 });
-
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
