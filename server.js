@@ -303,6 +303,117 @@ function saveSeen()    { scheduleWrite('lastSeen'); }
 // Fire-and-forget hydrate — server can start listening immediately
 hydrateFromRedis();
 
+// ═══════════════════════════════════════════════════════════════════════
+//  ACTIVITY LOG — ring buffer (last 500 events, in memory only)
+// ═══════════════════════════════════════════════════════════════════════
+const activityLog = [];
+const MAX_LOG = 500;
+
+function logEvent(type, data = {}) {
+  activityLog.push({ t: Date.now(), type, ...data });
+  if (activityLog.length > MAX_LOG) {
+    activityLog.splice(0, activityLog.length - MAX_LOG);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ADMIN AUTH — password + in-memory tokens
+// ═══════════════════════════════════════════════════════════════════════
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;  // 8 hours
+const adminSessions = new Map();                 // token -> { createdAt, ip }
+const loginAttempts = new Map();                 // ip -> { count, resetAt }
+
+if (ADMIN_PASSWORD) {
+  console.log('🔐 Admin panel enabled (password set)');
+} else {
+  console.log('⚠  ADMIN_PASSWORD not set — /admin will be disabled');
+}
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const rec = loginAttempts.get(ip);
+  if (!rec || now > rec.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return true;
+  }
+  if (rec.count >= 10) return false;
+  rec.count++;
+  return true;
+}
+
+function issueToken(ip) {
+  const token = crypto.randomBytes(32).toString('hex');
+  adminSessions.set(token, { createdAt: Date.now(), ip });
+  return token;
+}
+
+function validateToken(req) {
+  const hdr = req.headers['authorization'] || '';
+  const m = /^Bearer\s+(.+)$/.exec(hdr);
+  if (!m) return null;
+  const token = m[1];
+  const rec = adminSessions.get(token);
+  if (!rec) return null;
+  if (Date.now() - rec.createdAt > ADMIN_TOKEN_TTL_MS) {
+    adminSessions.delete(token);
+    return null;
+  }
+  return token;
+}
+
+// Sweep expired tokens every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, rec] of adminSessions) {
+    if (now - rec.createdAt > ADMIN_TOKEN_TTL_MS) adminSessions.delete(t);
+  }
+  for (const [ip, rec] of loginAttempts) {
+    if (now > rec.resetAt) loginAttempts.delete(ip);
+  }
+}, 60 * 60 * 1000);
+
+function requireAdmin(req, res) {
+  if (!ADMIN_PASSWORD) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Admin not configured' }));
+    return null;
+  }
+  const token = validateToken(req);
+  if (!token) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return null;
+  }
+  return token;
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let buf = '';
+    req.on('data', c => { buf += c; if (buf.length > 64 * 1024) { reject(new Error('Body too large')); req.destroy(); } });
+    req.on('end', () => {
+      if (!buf) return resolve({});
+      try { resolve(JSON.parse(buf)); } catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
 // init firebase admin!!
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
@@ -321,6 +432,217 @@ const server = http.createServer((req, res) => {
     res.writeHead(200);
     return res.end();
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  ADMIN PANEL — served HTML + JSON API
+  // ══════════════════════════════════════════════════════════════════════
+
+  // Prevent Google/search engines from indexing the admin
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+
+  // ── Serve admin.html ──────────────────────────────────────────────
+  if (req.method === 'GET' && (req.url === '/admin' || req.url === '/admin/' || req.url.startsWith('/admin?'))) {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(html);
+    } catch (e) {
+      res.writeHead(500);
+      return res.end('admin.html not found on server');
+    }
+  }
+
+  // ── POST /admin-api/login ─────────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/admin-api/login') {
+    if (!ADMIN_PASSWORD) { res.writeHead(503); return res.end(JSON.stringify({ error: 'Admin not configured' })); }
+    const ip = clientIp(req);
+    if (!checkRateLimit(ip)) {
+      logEvent('admin_login_ratelimited', { ip });
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Too many attempts. Try again in 15 minutes.' }));
+    }
+    readJsonBody(req).then(body => {
+      if (!safeEqual(String(body.password || ''), ADMIN_PASSWORD)) {
+        logEvent('admin_login_failed', { ip });
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Invalid password' }));
+      }
+      const token = issueToken(ip);
+      logEvent('admin_login_ok', { ip });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token, expiresIn: ADMIN_TOKEN_TTL_MS }));
+    }).catch(() => { res.writeHead(400); res.end(JSON.stringify({ error: 'Bad request' })); });
+    return;
+  }
+
+  // ── POST /admin-api/logout ────────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/admin-api/logout') {
+    const token = validateToken(req);
+    if (token) adminSessions.delete(token);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
+  // ── GET /admin-api/stats ──────────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/admin-api/stats') {
+    if (!requireAdmin(req, res)) return;
+    const now = Date.now();
+    const fleets = Object.keys(fleetDevices);
+    const totalDevices = fleets.reduce((s, k) => s + (fleetDevices[k]?.length || 0), 0);
+    let onlineNow = 0, activeSessions = 0;
+    for (const room of Object.values(rooms)) {
+      if (room.host?.readyState === 1) onlineNow++;
+      if (room.host?.readyState === 1 && room.controller?.readyState === 1) activeSessions++;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      fleets: fleets.length,
+      devices: totalDevices,
+      onlineNow,
+      activeSessions,
+      fcmTokens: Object.keys(fcmTokens).length,
+      buildQueueDepth,
+      apkCacheSize: apkCache.size,
+      redisConfigured: !!redis,
+      uptimeMs: process.uptime() * 1000,
+      now,
+    }));
+  }
+
+  // ── GET /admin-api/fleets ─────────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/admin-api/fleets') {
+    if (!requireAdmin(req, res)) return;
+    const out = [];
+    for (const key of Object.keys(fleetDevices)) {
+      const devices = fleetDevices[key] || [];
+      let online = 0;
+      let lastSeenAt = 0;
+      for (const d of devices) {
+        if (rooms[d.id]?.host?.readyState === 1) online++;
+        const s = lastSeen[d.id];
+        if (s && s > lastSeenAt) lastSeenAt = s;
+      }
+      out.push({
+        id: key,
+        deviceCount: devices.length,
+        onlineCount: online,
+        lastSeenAt: lastSeenAt || null,
+        devices: devices.map(d => ({ id: d.id, name: d.name, addedAt: d.addedAt || null })),
+      });
+    }
+    out.sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(out));
+  }
+
+  // ── GET /admin-api/devices ────────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/admin-api/devices') {
+    if (!requireAdmin(req, res)) return;
+    const out = [];
+    for (const key of Object.keys(fleetDevices)) {
+      for (const d of (fleetDevices[key] || [])) {
+        const room = rooms[d.id];
+        const online = room?.host?.readyState === 1;
+        const busy = online && room?.controller?.readyState === 1;
+        out.push({
+          id: d.id,
+          name: d.name,
+          fleet: key,
+          addedAt: d.addedAt || null,
+          lastSeen: lastSeen[d.id] || null,
+          hasFcm: !!fcmTokens[d.id],
+          state: busy ? 'busy' : (online ? 'online' : (fcmTokens[d.id] ? 'standby' : 'offline')),
+        });
+      }
+    }
+    out.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(out));
+  }
+
+  // ── GET /admin-api/sessions ───────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/admin-api/sessions') {
+    if (!requireAdmin(req, res)) return;
+    const out = [];
+    for (const [roomId, room] of Object.entries(rooms)) {
+      const hostOnline = room.host?.readyState === 1;
+      const ctrlOnline = room.controller?.readyState === 1;
+      if (!hostOnline && !ctrlOnline) continue;
+      out.push({
+        roomId,
+        hostOnline,
+        controllerOnline: ctrlOnline,
+        hostJoinedAt: room.hostJoinedAt || null,
+        controllerJoinedAt: room.controllerJoinedAt || null,
+        mode: room.mode || null,
+        hostReady: !!room.hostReady,
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(out));
+  }
+
+  // ── GET /admin-api/logs ───────────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/admin-api/logs') {
+    if (!requireAdmin(req, res)) return;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(activityLog.slice().reverse()));
+  }
+
+  // ── DELETE /admin-api/devices/:id ─────────────────────────────────
+  if (req.method === 'DELETE' && req.url.startsWith('/admin-api/devices/')) {
+    if (!requireAdmin(req, res)) return;
+    const deviceId = decodeURIComponent(req.url.split('/')[3] || '');
+    let removed = false;
+    for (const key of Object.keys(fleetDevices)) {
+      const before = fleetDevices[key].length;
+      fleetDevices[key] = fleetDevices[key].filter(d => d.id !== deviceId);
+      if (fleetDevices[key].length !== before) removed = true;
+    }
+    delete fcmTokens[deviceId];
+    delete lastSeen[deviceId];
+    saveFleet(); saveTokens(); saveSeen();
+    logEvent('admin_device_deleted', { deviceId, removed });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, removed }));
+  }
+
+  // ── DELETE /admin-api/fleets/:id ──────────────────────────────────
+  if (req.method === 'DELETE' && req.url.startsWith('/admin-api/fleets/')) {
+    if (!requireAdmin(req, res)) return;
+    const fleetId = decodeURIComponent(req.url.split('/')[3] || '');
+    const devices = fleetDevices[fleetId] || [];
+    delete fleetDevices[fleetId];
+    for (const d of devices) {
+      delete fcmTokens[d.id];
+      delete lastSeen[d.id];
+    }
+    saveFleet(); saveTokens(); saveSeen();
+    logEvent('admin_fleet_wiped', { fleetId, deviceCount: devices.length });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, devicesRemoved: devices.length }));
+  }
+
+  // ── POST /admin-api/sessions/:roomId/kill ─────────────────────────
+  if (req.method === 'POST' && req.url.startsWith('/admin-api/sessions/') && req.url.endsWith('/kill')) {
+    if (!requireAdmin(req, res)) return;
+    const parts = req.url.split('/');
+    const roomId = decodeURIComponent(parts[3] || '');
+    const room = rooms[roomId];
+    if (!room) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Room not found' }));
+    }
+    try { room.host?.send(JSON.stringify({ type: 'peer-left' })); } catch (_) {}
+    try { room.controller?.send(JSON.stringify({ type: 'peer-left' })); } catch (_) {}
+    try { room.host?.close(); } catch (_) {}
+    try { room.controller?.close(); } catch (_) {}
+    delete rooms[roomId];
+    logEvent('admin_session_killed', { roomId });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
   // ============================================================
   // EDIT 2: HTTP route for /status
   // ============================================================
@@ -449,10 +771,10 @@ const server = http.createServer((req, res) => {
     const masterId = parts[2];
     const deviceId = parts[3];
     if (fleetDevices[masterId]) {
-      // Remove it from the list!!
       fleetDevices[masterId] = fleetDevices[masterId].filter(d => d.id !== deviceId);
-      saveFleet(); // Persist changes to disk!!
+      saveFleet();
       console.log(`🗑 Permanently deleted device ${deviceId} from fleet ${masterId}`);
+      logEvent('device_deleted_by_user', { deviceId, fleetId: masterId });
       
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true }));
@@ -621,12 +943,16 @@ wss.on('connection', (ws) => {
       }
       rooms[currentRoom][currentRole] = ws;
       
-      // ============================================================
-      // EDIT 4a: Update last seen on host join
-      // ============================================================
-      if (currentRole === 'host') touchSeen(currentRoom);
+      // Track join timestamps for admin panel session view
+      if (currentRole === 'host') {
+        rooms[currentRoom].hostJoinedAt = Date.now();
+        touchSeen(currentRoom);
+      } else if (currentRole === 'controller') {
+        rooms[currentRoom].controllerJoinedAt = Date.now();
+      }
       
       console.log(`${currentRole} joined room ${currentRoom}`);
+      logEvent('room_join', { role: currentRole, roomId: currentRoom });
       if (currentRole === 'host') {
         rooms[currentRoom].hostReady = true;
         if (rooms[currentRoom].controller) {
@@ -652,21 +978,23 @@ wss.on('connection', (ws) => {
     else if (data.type === 'register-fcm') {
       console.log('FCM token registered for:', data.deviceId);
       fcmTokens[data.deviceId] = data.token;
-      saveTokens(); // persist to file!!
+      saveTokens();
+      logEvent('fcm_registered', { deviceId: data.deviceId });
     }
     else if (data.type === 'register-host') {
       const mid = data.masterId;
       if (!fleetDevices[mid]) fleetDevices[mid] = [];
       
-      // Prevent duplicates, but update the name if it changed
       const exists = fleetDevices[mid].find(d => d.id === data.deviceId);
       if (!exists) {
         fleetDevices[mid].push({ id: data.deviceId, name: data.name, addedAt: Date.now() });
         saveFleet();
         console.log(`🆕 Host ${data.name} auto-registered to Fleet ${mid}`);
+        logEvent('host_registered', { deviceId: data.deviceId, name: data.name, fleetId: mid });
       } else if (exists.name !== data.name) {
         exists.name = data.name;
         saveFleet();
+        logEvent('host_renamed', { deviceId: data.deviceId, name: data.name, fleetId: mid });
       }
     }
     else if (data.type === 'streaming-started') {
@@ -735,6 +1063,9 @@ wss.on('connection', (ws) => {
   });
   ws.on('close', () => {
     console.log(`${currentRole} left room ${currentRoom}`);
+    if (currentRoom && currentRole) {
+      logEvent('room_leave', { role: currentRole, roomId: currentRoom });
+    }
     if (currentRoom && rooms[currentRoom]) {
       // only clean up if THIS socket is still the active one!!
       // prevents stale old connections from deleting the new one!!
