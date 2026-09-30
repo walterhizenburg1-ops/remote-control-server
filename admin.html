@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADMIN · RemoteLink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html {
+  --g: 0,255,65;
+  --red: #00ff41;
+  --red-bright: #4dff7a;
+  --red-soft: #99ffb3;
+  --red-deep: #008a23;
+  --red-dim: rgba(var(--g), 0.10);
+  --red-dim2: rgba(var(--g), 0.20);
+  --red-glow: rgba(var(--g), 0.45);
+  --red-glow-soft: rgba(var(--g), 0.18);
+  --border-faint: rgba(var(--g), 0.07);
+  --border-dim: rgba(var(--g), 0.17);
+  --border-mid: rgba(var(--g), 0.34);
+  --bg-void: #000;
+  --bg-surface: #0a0a0c;
+  --txt-1: #d9ffe5;
+  --txt-2: rgba(200,255,220,0.55);
+  --txt-3: rgba(200,255,220,0.26);
+  --amber: #ffb400;
+  --red-alert: #ff4444;
+}
+html.theme-red {
+  --g: 255,0,51; --red:#ff0033; --red-bright:#ff3b5c; --red-soft:#ff7d92; --red-deep:#a3001f;
+  --txt-1:#ffe9ed; --txt-2: rgba(255,233,237,0.55); --txt-3: rgba(255,233,237,0.26);
+}
+html.theme-blue {
+  --g: 0,212,255; --red:#00d4ff; --red-bright:#4de5ff; --red-soft:#99ebff; --red-deep:#0077a3;
+  --txt-1:#d9f3ff; --txt-2: rgba(200,235,255,0.55); --txt-3: rgba(200,235,255,0.26);
+}
+html.theme-pureblue {
+  --g: 0,0,255; --red:#0000ff; --red-bright:#4d4dff; --red-soft:#9999ff; --red-deep:#0000a3;
+  --txt-1:#e0e0ff; --txt-2: rgba(200,200,255,0.55); --txt-3: rgba(200,200,255,0.26);
+}
+html.theme-yellow {
+  --g: 255,204,0; --red:#ffcc00; --red-bright:#ffdd44; --red-soft:#ffe680; --red-deep:#a38000;
+  --txt-1:#fff7d9; --txt-2: rgba(255,245,200,0.55); --txt-3: rgba(255,245,200,0.26);
+}
+html, body {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-void);
+  color: var(--txt-1);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  transition: color 0.35s;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 9998;
+  background: repeating-linear-gradient(0deg,
+    rgba(var(--g),0.022) 0px, rgba(var(--g),0.022) 1px, transparent 1px, transparent 3px);
+  opacity: 0.5;
+}
+
+/* ── Login ── */
+#login {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(var(--g),0.06) 0%, transparent 70%), #000;
+  z-index: 100;
+}
+#login.hidden { display: none; }
+#login-card {
+  background: rgba(10,12,10,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 12px;
+  padding: 32px 28px;
+  width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; gap: 18px;
+  box-shadow: 0 0 60px var(--red-dim), inset 0 0 40px var(--red-dim);
+  position: relative; overflow: hidden;
+}
+#login-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red), var(--red-bright), var(--red), transparent);
+  box-shadow: 0 0 12px var(--red-glow);
+}
+#login-card h1 {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 20px; letter-spacing: 0.2em; text-transform: uppercase;
+  text-align: center;
+  color: var(--red);
+  text-shadow: 0 0 10px var(--red-glow), 0 0 26px var(--red-glow-soft);
+}
+#login-card p {
+  font-size: 11px; color: var(--txt-2); text-align: center;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+#login-input {
+  background: rgba(7,9,7,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 12px 14px;
+  color: var(--txt-1);
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  width: 100%;
+  letter-spacing: 0.1em;
+  transition: all 0.2s;
+}
+#login-input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red-glow-soft), 0 0 18px var(--red-glow-soft), inset 0 0 12px var(--red-dim);
+}
+#login-btn {
+  background: linear-gradient(135deg, #003d0f 0%, var(--red-deep) 40%, var(--red-deep) 70%, var(--red) 100%);
+  border: 1px solid var(--red);
+  border-radius: 5px;
+  padding: 13px;
+  color: #fff; font-weight: 800; font-size: 11.5px; letter-spacing: 0.22em;
+  cursor: pointer; text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow: 0 0 22px var(--red-glow-soft);
+  transition: all 0.2s;
+}
+#login-btn:hover { opacity: 0.92; box-shadow: 0 0 34px var(--red-glow); }
+#login-err {
+  color: var(--red-alert);
+  font-size: 11px; text-align: center; min-height: 14px;
+  letter-spacing: 0.06em;
+}
+
+/* ── Main ── */
+#app { display: none; }
+#app.show { display: block; }
+
+header {
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border-dim);
+  padding: 14px 22px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+  flex-wrap: wrap; gap: 12px;
+}
+header::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red) 20%, var(--red-bright) 50%, var(--red) 80%, transparent);
+  box-shadow: 0 0 12px var(--red-glow);
+  opacity: 0.85;
+}
+#title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 18px;
+  letter-spacing: 0.28em;
+  color: var(--red);
+  text-transform: uppercase;
+  text-shadow: 0 0 8px var(--red-glow);
+}
+#title::before { content: '⚙ '; }
+header .hdr-right { display: flex; gap: 8px; align-items: center; }
+
+.btn {
+  background: rgba(10,12,10,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 8px 14px;
+  color: var(--txt-2);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+}
+.btn:hover {
+  border-color: var(--red);
+  color: var(--red-bright);
+  background: var(--red-dim);
+  box-shadow: 0 0 14px var(--red-glow-soft);
+}
+.btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.25); }
+.btn.danger:hover { color: #fff; border-color: #ff4444; background: rgba(255,60,60,0.2); box-shadow: 0 0 14px rgba(255,60,60,0.4); }
+.btn.tiny { padding: 5px 9px; font-size: 9px; }
+
+.wrap { padding: 22px; max-width: 1400px; margin: 0 auto; }
+
+/* ── Stat cards ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.stat-card {
+  background: rgba(10,12,10,0.75);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red) 30%, transparent);
+  opacity: 0.7;
+}
+.stat-label {
+  font-size: 9.5px; color: var(--txt-3);
+  letter-spacing: 0.22em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 32px; line-height: 1;
+  color: var(--red-bright);
+  text-shadow: 0 0 10px var(--red-glow), 0 0 24px var(--red-glow-soft);
+}
+.stat-sub {
+  font-size: 10px; color: var(--txt-3); margin-top: 6px;
+  letter-spacing: 0.06em;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: flex; gap: 4px; margin-bottom: 18px;
+  border-bottom: 1px solid var(--border-faint);
+  padding-bottom: 0; flex-wrap: wrap;
+}
+.tab {
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--txt-3);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--txt-2); }
+.tab.active {
+  color: var(--red-bright);
+  border-bottom-color: var(--red);
+  text-shadow: 0 0 8px var(--red-glow-soft);
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Tables ── */
+.tbl {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  background: rgba(10,12,10,0.6);
+  border: 1px solid var(--border-faint);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tbl thead tr { background: rgba(0,0,0,0.5); }
+.tbl th {
+  font-size: 9.5px; font-weight: 700;
+  color: var(--red-deep);
+  letter-spacing: 0.2em; text-transform: uppercase;
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-dim);
+  white-space: nowrap;
+}
+.tbl td {
+  font-size: 11px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-faint);
+  color: var(--txt-1);
+  vertical-align: middle;
+}
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:hover { background: rgba(var(--g),0.04); }
+.mono { font-family: 'JetBrains Mono', monospace; letter-spacing: 0.08em; }
+.dim { color: var(--txt-3); }
+.tiny { font-size: 10px; }
+.nowrap { white-space: nowrap; }
+.center { text-align: center; }
+
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.badge.online    { background: rgba(0,255,65,0.15); color: #4dff7a; border: 1px solid rgba(0,255,65,0.35); }
+.badge.busy      { background: rgba(255,180,0,0.15); color: #ffb400; border: 1px solid rgba(255,180,0,0.35); }
+.badge.standby   { background: rgba(0,138,35,0.18); color: #66c98a; border: 1px solid rgba(0,138,35,0.35); }
+.badge.offline   { background: rgba(120,120,120,0.15); color: #999; border: 1px solid rgba(120,120,120,0.3); }
+.badge.alert     { background: rgba(255,60,60,0.15); color: #ff6666; border: 1px solid rgba(255,60,60,0.35); }
+
+/* ── Search ── */
+.search-bar {
+  background: rgba(7,9,7,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 10px 14px;
+  color: var(--txt-1);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  width: 100%; max-width: 360px;
+  outline: none;
+  letter-spacing: 0.06em;
+  margin-bottom: 14px;
+}
+.search-bar:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
+
+/* ── Log list ── */
+.log-list {
+  max-height: 600px; overflow-y: auto;
+  background: rgba(10,12,10,0.6);
+  border: 1px solid var(--border-faint);
+  border-radius: 8px;
+  padding: 4px;
+}
+.log-item {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.log-item:last-child { border-bottom: none; }
+.log-time { color: var(--txt-3); font-size: 10px; white-space: nowrap; min-width: 130px; }
+.log-type { color: var(--red-bright); font-weight: 700; min-width: 200px; }
+.log-data { color: var(--txt-2); word-break: break-all; }
+
+.empty {
+  padding: 48px 20px; text-align: center;
+  color: var(--txt-3); font-size: 11px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: rgba(0,0,0,0.92);
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  padding: 12px 22px;
+  color: var(--red-bright);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  box-shadow: 0 0 24px var(--red-glow-soft);
+  transition: transform 0.25s;
+  z-index: 200;
+  pointer-events: none;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.err { color: #ff6666; border-color: rgba(255,60,60,0.4); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #050805; }
+::-webkit-scrollbar-thumb { background: var(--red-deep); }
+::-webkit-scrollbar-thumb:hover { background: var(--red); }
+
+@media (max-width: 700px) {
+  header { padding: 12px; }
+  #title { font-size: 14px; letter-spacing: 0.2em; }
+  .wrap { padding: 14px; }
+  .stat-value { font-size: 24px; }
+  .tbl { font-size: 10px; }
+  .tbl th, .tbl td { padding: 8px 8px; }
+  .log-item { flex-direction: column; gap: 4px; }
+  .log-time, .log-type { min-width: 0; }
+}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div id="login-card">
+    <h1>Admin Console</h1>
+    <p>Enter password to continue</p>
+    <input id="login-input" type="password" placeholder="password" autocomplete="current-password"/>
+    <div id="login-err"></div>
+    <button id="login-btn">Unlock</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div id="title">ADMIN · REMOTELINK</div>
+    <div class="hdr-right">
+      <button class="btn" id="btnRefresh">⟳ Refresh</button>
+      <button class="btn" id="btnTheme">◐ Theme</button>
+      <button class="btn danger" id="btnLogout">Logout</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Fleets</div><div class="stat-value" id="s-fleets">—</div><div class="stat-sub" id="s-fleets-sub">&nbsp;</div></div>
+      <div class="stat-card"><div class="stat-label">Devices</div><div class="stat-value" id="s-devices">—</div><div class="stat-sub" id="s-devices-sub">&nbsp;</div></div>
+      <div class="stat-card"><div class="stat-label">Online</div><div class="stat-value" id="s-online">—</div><div class="stat-sub">devices currently connected</div></div>
+      <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-value" id="s-sessions">—</div><div class="stat-sub">host + controller pairs</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="fleets">Fleets</button>
+      <button class="tab" data-tab="devices">Devices</button>
+      <button class="tab" data-tab="sessions">Sessions</button>
+      <button class="tab" data-tab="logs">Logs</button>
+    </div>
+
+    <div class="tab-panel active" id="p-overview">
+      <h3 style="font-family:'Share Tech Mono',monospace;color:var(--red-deep);letter-spacing:0.22em;font-size:11px;margin-bottom:12px;">RECENT ACTIVITY</h3>
+      <div class="log-list" id="overview-logs"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="tab-panel" id="p-fleets">
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:180px;">Master Key</th>
+          <th style="width:90px;">Devices</th>
+          <th style="width:80px;">Online</th>
+          <th>Last Seen</th>
+          <th style="width:180px; text-align:right;">Actions</th>
+        </tr></thead>
+        <tbody id="fleets-body"><tr><td colspan="5" class="empty">loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="tab-panel" id="p-devices">
+      <input class="search-bar" id="device-search" placeholder="Search by ID, name, or fleet…"/>
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:120px;">Device ID</th>
+          <th>Name</th>
+          <th style="width:150px;">Fleet</th>
+          <th style="width:100px;">State</th>
+          <th style="width:130px;">Last Seen</th>
+          <th style="width:80px; text-align:right;">Actions</th>
+        </tr></thead>
+        <tbody id="devices-body"><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="tab-panel" id="p-sessions">
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:130px;">Room</th>
+          <th style="width:100px;">Host</th>
+          <th style="width:120px;">Controller</th>
+          <th>Duration</th>
+          <th style="width:120px; text-align:right;">Actions</th>
+        </tr></thead>
+        <tbody id="sessions-body"><tr><td colspan="5" class="empty">loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="tab-panel" id="p-logs">
+      <div class="log-list" id="logs-body"><div class="empty">loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API_BASE = location.origin;
+let TOKEN = localStorage.getItem('admin_token') || '';
+let currentTab = 'overview';
+let pollTimer = null;
+let devicesCache = [];
+
+// ── Tiny fetch wrapper ────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await fetch(API_BASE + path, { ...opts, headers });
+  if (res.status === 401) {
+    // Token expired
+    localStorage.removeItem('admin_token');
+    TOKEN = '';
+    showLogin();
+    throw new Error('Unauthorized');
+  }
+  return res;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────
+let toastT = null;
+function toast(msg, isErr = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.toggle('err', isErr);
+  el.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── Theme ────────────────────────────────────────────────────────────
+const THEMES = ['green','red','blue','pureblue','yellow'];
+let currentTheme = localStorage.getItem('admin_theme') || 'green';
+function applyTheme(t) {
+  if (!THEMES.includes(t)) t = 'green';
+  currentTheme = t;
+  document.documentElement.classList.remove('theme-red','theme-blue','theme-pureblue','theme-yellow');
+  if (t !== 'green') document.documentElement.classList.add('theme-' + t);
+  localStorage.setItem('admin_theme', t);
+}
+applyTheme(currentTheme);
+document.getElementById('btnTheme').addEventListener('click', () => {
+  const i = THEMES.indexOf(currentTheme);
+  applyTheme(THEMES[(i + 1) % THEMES.length]);
+});
+
+// ── Login ────────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login').classList.remove('hidden');
+  document.getElementById('app').classList.remove('show');
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+function showApp() {
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.add('show');
+  refreshAll();
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(refreshAll, 5000);
+}
+
+async function doLogin() {
+  const pass = document.getElementById('login-input').value;
+  const err = document.getElementById('login-err');
+  err.textContent = '';
+  if (!pass) { err.textContent = 'Enter a password'; return; }
+  try {
+    const res = await fetch(API_BASE + '/admin-api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pass })
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Login failed'; return; }
+    TOKEN = data.token;
+    localStorage.setItem('admin_token', TOKEN);
+    document.getElementById('login-input').value = '';
+    showApp();
+  } catch (e) {
+    err.textContent = 'Network error: ' + e.message;
+  }
+}
+
+document.getElementById('login-btn').addEventListener('click', doLogin);
+document.getElementById('login-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('btnLogout').addEventListener('click', async () => {
+  try { await api('/admin-api/logout', { method: 'POST' }); } catch (_) {}
+  localStorage.removeItem('admin_token');
+  TOKEN = '';
+  showLogin();
+});
+
+// ── Tabs ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('p-' + t.dataset.tab).classList.add('active');
+    currentTab = t.dataset.tab;
+    refreshTab();
+  });
+});
+
+// ── Formatting helpers ───────────────────────────────────────────────
+function fmtAgo(ms) {
+  if (!ms) return '—';
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Refreshers ───────────────────────────────────────────────────────
+async function refreshStats() {
+  try {
+    const res = await api('/admin-api/stats');
+    const d = await res.json();
+    document.getElementById('s-fleets').textContent = d.fleets;
+    document.getElementById('s-devices').textContent = d.devices;
+    document.getElementById('s-online').textContent = d.onlineNow;
+    document.getElementById('s-sessions').textContent = d.activeSessions;
+    document.getElementById('s-fleets-sub').textContent = d.redisConfigured ? 'redis persisted ✓' : 'no redis';
+    document.getElementById('s-devices-sub').textContent = `${d.fcmTokens} fcm tokens`;
+  } catch (_) {}
+}
+
+async function refreshLogs(containerId, limit = 500) {
+  try {
+    const res = await api('/admin-api/logs');
+    const logs = await res.json();
+    const el = document.getElementById(containerId);
+    if (!logs.length) { el.innerHTML = '<div class="empty">no activity yet</div>'; return; }
+    el.innerHTML = logs.slice(0, limit).map(e => {
+      const data = Object.entries(e).filter(([k]) => k !== 't' && k !== 'type')
+        .map(([k,v]) => `${k}=${v}`).join(' ');
+      return `<div class="log-item">
+        <span class="log-time">${new Date(e.t).toLocaleString()}</span>
+        <span class="log-type">${esc(e.type)}</span>
+        <span class="log-data">${esc(data)}</span>
+      </div>`;
+    }).join('');
+  } catch (_) {}
+}
+
+async function refreshFleets() {
+  try {
+    const res = await api('/admin-api/fleets');
+    const fleets = await res.json();
+    const el = document.getElementById('fleets-body');
+    if (!fleets.length) { el.innerHTML = '<tr><td colspan="5" class="empty">no fleets yet</td></tr>'; return; }
+    el.innerHTML = fleets.map(f => `
+      <tr>
+        <td class="mono">${esc(f.id)}</td>
+        <td>${f.deviceCount}</td>
+        <td>${f.onlineCount}</td>
+        <td class="dim tiny">${esc(fmtAgo(f.lastSeenAt))}</td>
+        <td style="text-align:right;">
+          <button class="btn tiny danger" data-wipe-fleet="${esc(f.id)}">Wipe</button>
+        </td>
+      </tr>
+    `).join('');
+    el.querySelectorAll('[data-wipe-fleet]').forEach(btn => {
+      btn.addEventListener('click', () => wipeFleet(btn.dataset.wipeFleet));
+    });
+  } catch (_) {}
+}
+
+async function refreshDevices() {
+  try {
+    const res = await api('/admin-api/devices');
+    devicesCache = await res.json();
+    renderDevices(devicesCache);
+  } catch (_) {}
+}
+
+function renderDevices(devices) {
+  const search = document.getElementById('device-search').value.trim().toLowerCase();
+  const filtered = search
+    ? devices.filter(d => d.id.toLowerCase().includes(search) ||
+                          (d.name||'').toLowerCase().includes(search) ||
+                          d.fleet.toLowerCase().includes(search))
+    : devices;
+  const el = document.getElementById('devices-body');
+  if (!filtered.length) { el.innerHTML = '<tr><td colspan="6" class="empty">no devices</td></tr>'; return; }
+  el.innerHTML = filtered.map(d => `
+    <tr>
+      <td class="mono">${esc(d.id)}</td>
+      <td>${esc(d.name || '—')}</td>
+      <td class="mono tiny">${esc(d.fleet)}</td>
+      <td><span class="badge ${d.state}">${d.state}</span></td>
+      <td class="dim tiny">${esc(fmtAgo(d.lastSeen))}</td>
+      <td style="text-align:right;">
+        <button class="btn tiny danger" data-del-device="${esc(d.id)}">Del</button>
+      </td>
+    </tr>
+  `).join('');
+  el.querySelectorAll('[data-del-device]').forEach(btn => {
+    btn.addEventListener('click', () => deleteDevice(btn.dataset.delDevice));
+  });
+}
+
+async function refreshSessions() {
+  try {
+    const res = await api('/admin-api/sessions');
+    const sessions = await res.json();
+    const el = document.getElementById('sessions-body');
+    if (!sessions.length) { el.innerHTML = '<tr><td colspan="5" class="empty">no live sessions</td></tr>'; return; }
+    el.innerHTML = sessions.map(s => {
+      const since = s.controllerJoinedAt || s.hostJoinedAt;
+      const dur = since ? Date.now() - since : null;
+      return `<tr>
+        <td class="mono">${esc(s.roomId)}</td>
+        <td>${s.hostOnline ? '<span class="badge online">online</span>' : '<span class="badge offline">—</span>'}</td>
+        <td>${s.controllerOnline ? '<span class="badge busy">controlling</span>' : '<span class="badge standby">waiting</span>'}</td>
+        <td class="dim">${esc(fmtDuration(dur))}</td>
+        <td style="text-align:right;">
+          <button class="btn tiny danger" data-kill-session="${esc(s.roomId)}">Kill</button>
+        </td>
+      </tr>`;
+    }).join('');
+    el.querySelectorAll('[data-kill-session]').forEach(btn => {
+      btn.addEventListener('click', () => killSession(btn.dataset.killSession));
+    });
+  } catch (_) {}
+}
+
+// ── Actions ──────────────────────────────────────────────────────────
+async function deleteDevice(id) {
+  if (!confirm(`Permanently delete device ${id}?\n\nThis removes it from every fleet + its FCM token.`)) return;
+  try {
+    const res = await api('/admin-api/devices/' + encodeURIComponent(id), { method: 'DELETE' });
+    const d = await res.json();
+    toast(d.removed ? 'Device deleted' : 'Device not found', !d.removed);
+    refreshDevices(); refreshStats();
+  } catch (e) { toast('Delete failed: ' + e.message, true); }
+}
+async function wipeFleet(id) {
+  const phrase = prompt(`Type WIPE to confirm wiping fleet ${id}.\n\nThis deletes the fleet and every device inside it.`);
+  if (phrase !== 'WIPE') return;
+  try {
+    const res = await api('/admin-api/fleets/' + encodeURIComponent(id), { method: 'DELETE' });
+    const d = await res.json();
+    toast(`Fleet wiped (${d.devicesRemoved} devices removed)`, false);
+    refreshFleets(); refreshStats(); refreshDevices();
+  } catch (e) { toast('Wipe failed: ' + e.message, true); }
+}
+async function killSession(roomId) {
+  if (!confirm(`Kill session in room ${roomId}?\n\nBoth host and controller will be disconnected.`)) return;
+  try {
+    await api('/admin-api/sessions/' + encodeURIComponent(roomId) + '/kill', { method: 'POST' });
+    toast('Session killed');
+    refreshSessions(); refreshStats();
+  } catch (e) { toast('Kill failed: ' + e.message, true); }
+}
+
+// ── Refresh orchestrator ─────────────────────────────────────────────
+async function refreshTab() {
+  if (!TOKEN) return;
+  if (currentTab === 'overview') await refreshLogs('overview-logs', 30);
+  if (currentTab === 'fleets')   await refreshFleets();
+  if (currentTab === 'devices')  await refreshDevices();
+  if (currentTab === 'sessions') await refreshSessions();
+  if (currentTab === 'logs')     await refreshLogs('logs-body', 500);
+}
+
+async function refreshAll() {
+  if (!TOKEN) return;
+  await refreshStats();
+  await refreshTab();
+}
+
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  toast('Refreshing…');
+  refreshAll();
+});
+document.getElementById('device-search').addEventListener('input', () => {
+  renderDevices(devicesCache);
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────
+if (TOKEN) {
+  // Validate existing token
+  api('/admin-api/stats').then(() => showApp()).catch(() => showLogin());
+} else {
+  showLogin();
+}
+</script>
+</body>
+</html>
