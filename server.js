@@ -132,8 +132,10 @@ function signApk(inputApk, outDir) {
     if (!ksPass) return reject(new Error('KEYSTORE_PASSWORD env missing'));
     const keyPass = process.env.KEY_PASSWORD || ksPass;
 
+    // uber-apk-signer v1.3.0 — minimal, only flags we know exist.
+    // `--debug` gives us useful diagnostics if it fails.
     const args = [
-      '-Xmx192m',
+      '-Xmx256m',
       '-jar', APK_SIGNER_JAR,
       '--apks', inputApk,
       '--ks', KEYSTORE_PATH,
@@ -141,15 +143,26 @@ function signApk(inputApk, outDir) {
       '--ksPass', ksPass,
       '--ksKeyPass', keyPass,
       '--out', outDir,
-      '--overwrite',
-      '--allowResign',
+      '--debug',
     ];
 
-    execFile('java', args, { timeout: 90000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    console.log('🔧 running: java', args.join(' '));
+
+    execFile('java', args, { timeout: 120000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const out = (stdout || '').trim();
+      const er  = (stderr || '').trim();
+
+      // Log EVERYTHING so we can see what the signer actually said.
+      console.log('📜 apk-signer stdout:\n' + out.slice(0, 4000));
+      if (er) console.log('📜 apk-signer stderr:\n' + er.slice(0, 4000));
+
       if (err) {
-        return reject(new Error(`apk-signer failed: ${err.message}\n${(stderr || '').slice(0, 800)}`));
+        return reject(new Error(
+          `apk-signer exited with code ${err.code}. ` +
+          `stdout tail: ${out.slice(-600)} | stderr tail: ${er.slice(-600)}`
+        ));
       }
-      resolve({ stdout, stderr });
+      resolve({ stdout: out, stderr: er });
     });
   });
 }
@@ -179,12 +192,52 @@ async function buildApkForMaster(masterId) {
     // 2. Sign
     await signApk(patchedPath, signOutDir);
 
-    // 3. Find the signed output (uber-apk-signer names it <name>-aligned-signed.apk)
-    const files = fs.readdirSync(signOutDir);
-    const signedName = files.find(f => f.endsWith('-signed.apk')) || files.find(f => f.endsWith('.apk'));
-    if (!signedName) throw new Error('Signer produced no .apk output');
-    const signedPath = path.join(signOutDir, signedName);
+    // 3. Find the signed output. uber-apk-signer v1.3.0 writes
+    //    "<basename>-aligned-signed.apk" into --out. But if --out is
+    //    ignored by some versions, it writes next to the input. We look
+    //    in both places, and prefer -signed.apk.
+    const searchDirs = [signOutDir, BUILD_DIR];
+    let signedPath = null;
+    const patchedBase = path.basename(patchedPath);
+
+    for (const d of searchDirs) {
+      let entries = [];
+      try { entries = fs.readdirSync(d); } catch (_) {}
+      console.log(`🔍 scanning ${d} → [${entries.join(', ')}]`);
+
+      // Prefer explicitly-signed output
+      const signedMatch = entries.find(f =>
+        f.endsWith('-signed.apk') && f !== patchedBase
+      );
+      if (signedMatch) {
+        signedPath = path.join(d, signedMatch);
+        break;
+      }
+      // Fallback: any APK that isn't our own intermediate file
+      const anyApk = entries.find(f =>
+        f.endsWith('.apk') && f !== patchedBase
+      );
+      if (anyApk) {
+        signedPath = path.join(d, anyApk);
+        break;
+      }
+    }
+
+    if (!signedPath) {
+      const outEntries = (() => {
+        try { return fs.readdirSync(signOutDir); } catch (_) { return []; }
+      })();
+      const buildEntries = (() => {
+        try { return fs.readdirSync(BUILD_DIR); } catch (_) { return []; }
+      })();
+      throw new Error(
+        'Signer produced no .apk output. ' +
+        `outDir=[${outEntries.join(',')}] buildDir=[${buildEntries.join(',')}]`
+      );
+    }
+
     const size = fs.statSync(signedPath).size;
+    console.log(`✅ signed APK: ${signedPath} (${(size / 1024 / 1024).toFixed(1)} MB)`);
 
     // 4. Cache
     const rec = { path: signedPath, size, builtAt: Date.now() };
