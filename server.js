@@ -35,8 +35,29 @@ console.log('🌐 Server WS URL:    ', SERVER_WS_URL);
 const apkCache = new Map();
 const CACHE_TTL_MS = 30 * 60 * 1000;   // 30 min — /tmp is ephemeral anyway
 
-// Simple lock so two simultaneous builds don't OOM the box
-let buildInProgress = false;
+// ── Build queue ─────────────────────────────────────────────────────
+// A promise-chain acts as a FIFO queue: each new build appends itself
+// to the tail and runs when the previous one settles. This serializes
+// builds so two concurrent requests never OOM the 512 MB instance —
+// instead, user #2 just waits a few seconds longer.
+let buildQueueTail = Promise.resolve();
+let buildQueueDepth = 0;
+
+function enqueueBuild(fn) {
+  buildQueueDepth++;
+  console.log(`📥 Build queued (depth=${buildQueueDepth})`);
+  const run = async () => {
+    try { return await fn(); }
+    finally {
+      buildQueueDepth--;
+      console.log(`📤 Build finished (remaining in queue=${buildQueueDepth})`);
+    }
+  };
+  const next = buildQueueTail.then(run, run);
+  // Never let a rejection poison the chain for later waiters
+  buildQueueTail = next.catch(() => {});
+  return next;
+}
 
 // Keystore lives in env var (base64) — decoded to /tmp at boot
 let KEYSTORE_PATH = null;
@@ -149,16 +170,24 @@ function signApk(inputApk, outDir) {
 
 // ── 3. Full build pipeline (patch → sign → cache) ────────────────────
 async function buildApkForMaster(masterId) {
-  // Return cached build if still fresh
+  // Fast path — cached and still fresh
   const cached = apkCache.get(masterId);
   if (cached && (Date.now() - cached.builtAt) < CACHE_TTL_MS && fs.existsSync(cached.path)) {
+    console.log(`⚡ Cache hit for ${masterId}`);
     return cached;
   }
 
-  if (buildInProgress) {
-    throw new Error('Another build is in progress — try again in a few seconds');
+  // Slow path — queue it so concurrent requests don't OOM the instance
+  return enqueueBuild(() => actuallyBuild(masterId));
+}
+
+async function actuallyBuild(masterId) {
+  // Re-check cache — another request may have just built it while we waited
+  const cached = apkCache.get(masterId);
+  if (cached && (Date.now() - cached.builtAt) < CACHE_TTL_MS && fs.existsSync(cached.path)) {
+    console.log(`⚡ Cache hit after queue wait for ${masterId}`);
+    return cached;
   }
-  buildInProgress = true;
 
   const buildId = crypto.randomBytes(6).toString('hex');
   const patchedPath = path.join(BUILD_DIR, `patched-${buildId}.apk`);
@@ -172,10 +201,7 @@ async function buildApkForMaster(masterId) {
     // 2. Sign
     await signApk(patchedPath, signOutDir);
 
-    // 3. Find the signed output. uber-apk-signer v1.3.0 writes
-    //    "<basename>-aligned-signed.apk" into --out. But if --out is
-    //    ignored by some versions, it writes next to the input. We look
-    //    in both places, and prefer -signed.apk.
+    // 3. Find the signed output
     const searchDirs = [signOutDir, BUILD_DIR];
     let signedPath = null;
     const patchedBase = path.basename(patchedPath);
@@ -183,50 +209,24 @@ async function buildApkForMaster(masterId) {
     for (const d of searchDirs) {
       let entries = [];
       try { entries = fs.readdirSync(d); } catch (_) {}
-      console.log(`🔍 scanning ${d} → [${entries.join(', ')}]`);
-
-      // Prefer explicitly-signed output
-      const signedMatch = entries.find(f =>
-        f.endsWith('-signed.apk') && f !== patchedBase
-      );
-      if (signedMatch) {
-        signedPath = path.join(d, signedMatch);
-        break;
-      }
-      // Fallback: any APK that isn't our own intermediate file
-      const anyApk = entries.find(f =>
-        f.endsWith('.apk') && f !== patchedBase
-      );
-      if (anyApk) {
-        signedPath = path.join(d, anyApk);
-        break;
-      }
+      const signedMatch = entries.find(f => f.endsWith('-signed.apk') && f !== patchedBase);
+      if (signedMatch) { signedPath = path.join(d, signedMatch); break; }
+      const anyApk = entries.find(f => f.endsWith('.apk') && f !== patchedBase);
+      if (anyApk) { signedPath = path.join(d, anyApk); break; }
     }
 
     if (!signedPath) {
-      const outEntries = (() => {
-        try { return fs.readdirSync(signOutDir); } catch (_) { return []; }
-      })();
-      const buildEntries = (() => {
-        try { return fs.readdirSync(BUILD_DIR); } catch (_) { return []; }
-      })();
-      throw new Error(
-        'Signer produced no .apk output. ' +
-        `outDir=[${outEntries.join(',')}] buildDir=[${buildEntries.join(',')}]`
-      );
+      throw new Error('Signer produced no .apk output');
     }
 
     const size = fs.statSync(signedPath).size;
     console.log(`✅ signed APK: ${signedPath} (${(size / 1024 / 1024).toFixed(1)} MB)`);
 
-    // 4. Cache
     const rec = { path: signedPath, size, builtAt: Date.now() };
     apkCache.set(masterId, rec);
     return rec;
   } finally {
-    // Always remove the intermediate patched file
     try { fs.unlinkSync(patchedPath); } catch (_) {}
-    buildInProgress = false;
   }
 }
 
@@ -319,7 +319,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-      if (req.method === 'GET' && req.url.startsWith('/apk/')) {
+  if (req.method === 'GET' && req.url.startsWith('/apk/')) {
     // Strip optional .apk suffix and any query string
     const raw = req.url.split('?')[0];
     let masterId = (raw.split('/')[2] || '').trim().toUpperCase();
