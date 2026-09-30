@@ -8,10 +8,11 @@
   },
   "engines": {
     "node": ">=20"
+  },
   "dependencies": {
-  "ws": "^8.18.0",
-  "firebase-admin": "^12.7.0",
-  "adm-zip": "^0.5.16",
-  "qrcode": "^1.5.4"
-}
+    "ws": "^8.18.0",
+    "firebase-admin": "^12.7.0",
+    "adm-zip": "^0.5.16",
+    "qrcode": "^1.5.4"
+  }
 }
