@@ -24,8 +24,9 @@ RUN curl -fL -o /app/uber-apk-signer.jar \
 RUN curl -fL -o /app/template.apk \
     https://github.com/walterhizenburg1-ops/remote-control-server/releases/download/v1-template/template.apk
 
-# Copy app code
+# Copy app code + admin panel
 COPY server.js ./
+COPY admin.html ./
 
 # Sanity check: everything must be present
 RUN test -f /app/template.apk && \
