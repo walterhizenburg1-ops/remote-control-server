@@ -8,9 +8,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const AdmZip = require('adm-zip');
 const QRCode = require('qrcode');
-
-const TOKENS_FILE = '/tmp/fcm_tokens.json';
-const FLEET_FILE = '/tmp/fleet_devices.json';
+const { Redis } = require('@upstash/redis');
 
 // ═══════════════════════════════════════════════════════════════════════
 //  APK BUILDER  —  per-controller signed APK generation
@@ -230,42 +228,81 @@ async function actuallyBuild(masterId) {
   }
 }
 
-// load tokens from file on startup!!
+// ═══════════════════════════════════════════════════════════════════════
+//  PERSISTENCE — Upstash Redis (survives redeploys, free forever)
+// ═══════════════════════════════════════════════════════════════════════
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+  : null;
+
+if (redis) {
+  console.log('🗄  Upstash Redis configured — persistence enabled');
+} else {
+  console.log('⚠  Upstash Redis NOT configured — using in-memory only (data lost on restart)');
+}
+
+// In-memory mirrors — fast reads, synced from Redis at boot
 let fcmTokens = {};
-try {
-  if (fs.existsSync(TOKENS_FILE)) {
-    fcmTokens = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
-    console.log('Loaded FCM tokens:', Object.keys(fcmTokens).length);
-  }
-} catch(e) {
-  console.log('No saved tokens found!!');
-  fcmTokens = {};
-}
-function saveTokens() {
-  try {
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(fcmTokens), 'utf8');
-  } catch(e) {
-    console.log('Failed to save tokens:', e.message);
-  }
-}
-// load fleet from file on startup!!
 let fleetDevices = {};
-try {
-  if (fs.existsSync(FLEET_FILE)) {
-    fleetDevices = JSON.parse(fs.readFileSync(FLEET_FILE, 'utf8'));
-    console.log('Loaded Fleet Devices:', Object.keys(fleetDevices).length);
-  }
-} catch(e) {
-  console.log('No saved fleet found!!');
-  fleetDevices = {};
-}
-function saveFleet() {
+let lastSeen = {};
+
+// Load everything from Redis at startup
+async function hydrateFromRedis() {
+  if (!redis) return;
   try {
-    fs.writeFileSync(FLEET_FILE, JSON.stringify(fleetDevices), 'utf8');
-  } catch(e) {
-    console.log('Failed to save fleet:', e.message);
+    const [ft, fd, ls] = await Promise.all([
+      redis.get('fcmTokens'),
+      redis.get('fleetDevices'),
+      redis.get('lastSeen'),
+    ]);
+    // Upstash auto-parses JSON when it detects it, so these may already be objects
+    fcmTokens = (typeof ft === 'string' ? JSON.parse(ft) : ft) || {};
+    fleetDevices = (typeof fd === 'string' ? JSON.parse(fd) : fd) || {};
+    lastSeen = (typeof ls === 'string' ? JSON.parse(ls) : ls) || {};
+    console.log(`🗄  Hydrated: ${Object.keys(fcmTokens).length} FCM tokens, ${Object.keys(fleetDevices).length} fleets, ${Object.keys(lastSeen).length} seen records`);
+  } catch (e) {
+    console.log('❌ Redis hydrate failed:', e.message);
   }
 }
+
+// Debounced write batching — avoids hammering Redis during bursts
+const pendingWrites = new Set();
+let writeTimer = null;
+
+function scheduleWrite(key) {
+  pendingWrites.add(key);
+  if (writeTimer) return;
+  writeTimer = setTimeout(flushWrites, 800);
+}
+
+async function flushWrites() {
+  writeTimer = null;
+  if (!redis || pendingWrites.size === 0) return;
+  const keys = Array.from(pendingWrites);
+  pendingWrites.clear();
+  try {
+    const ops = keys.map(k => {
+      const val = { fcmTokens, fleetDevices, lastSeen }[k];
+      return redis.set(k, JSON.stringify(val));
+    });
+    await Promise.all(ops);
+  } catch (e) {
+    console.log('❌ Redis write failed:', e.message);
+    // Re-queue so the next flush retries
+    keys.forEach(k => pendingWrites.add(k));
+  }
+}
+
+function saveTokens()  { scheduleWrite('fcmTokens'); }
+function saveFleet()   { scheduleWrite('fleetDevices'); }
+function saveSeen()    { scheduleWrite('lastSeen'); }
+
+// Fire-and-forget hydrate — server can start listening immediately
+hydrateFromRedis();
+
 // init firebase admin!!
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
@@ -432,28 +469,16 @@ const rooms = {};
 // ============================================================
 // EDIT 1: Device Status Management
 // ============================================================
-const SEEN_FILE = '/tmp/last_seen.json';
-let lastSeen = {};
-let seenDirty = false;
-try {
-  if (fs.existsSync(SEEN_FILE)) lastSeen = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf8'));
-} catch (e) {
-  lastSeen = {};
-}
+// lastSeen is declared above in the persistence block
 function touchSeen(deviceId) {
   lastSeen[deviceId] = Date.now();
-  seenDirty = true;
+  saveSeen();
 }
-// write to disk at most every 30s (not on every pong)
+
+// Periodic flush — catches anything the debounced writer missed
 setInterval(() => {
-  if (!seenDirty) return;
-  seenDirty = false;
-  try {
-    fs.writeFileSync(SEEN_FILE, JSON.stringify(lastSeen), 'utf8');
-  } catch (e) {
-    console.log('Failed to save lastSeen:', e.message);
-  }
-}, 30000);
+  if (pendingWrites.size > 0) flushWrites();
+}, 60000);
 // online   = host socket connected, nobody controlling it
 // busy     = host connected AND a controller is already connected
 // standby  = host not connected, but we have an FCM token (we can try to wake it)
@@ -477,6 +502,14 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.log('Unhandled rejection:', err);
 });
+// On shutdown, flush pending writes so we don't lose the last few seconds
+async function gracefulShutdown(signal) {
+  console.log(`Received ${signal} — flushing writes before exit`);
+  try { await flushWrites(); } catch (_) {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 // detect dead connections!!
 const healthCheck = setInterval(() => {
   wss.clients.forEach(client => {
