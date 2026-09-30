@@ -319,8 +319,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && req.url.startsWith('/apk/')) {
-    const masterId = (req.url.split('/')[2] || '').trim().toUpperCase();
+    if (req.method === 'GET' && req.url.startsWith('/apk/')) {
+    // Strip optional .apk suffix and any query string
+    const raw = req.url.split('?')[0];
+    let masterId = (raw.split('/')[2] || '').trim().toUpperCase();
+    if (masterId.endsWith('.APK')) masterId = masterId.slice(0, -4);
+
     if (!isValidMasterId(masterId)) {
       res.writeHead(400); return res.end('Invalid masterId');
     }
@@ -335,12 +339,17 @@ const server = http.createServer((req, res) => {
       .then((rec) => {
         const ms = Date.now() - t0;
         console.log(`✅ Built ${masterId} in ${ms}ms — ${(rec.size / 1024 / 1024).toFixed(1)} MB`);
+
+        // 🎯 IMPORTANT: Do NOT send Content-Disposition: attachment here.
+        // Electron treats it as a browser download and cancels the fetch
+        // with net::ERR_FAILED. The controller sets the filename on the
+        // client side via a.download — the server doesn't need to help.
         res.writeHead(200, {
-          'Content-Type': 'application/vnd.android.package-archive',
+          'Content-Type': 'application/octet-stream',
           'Content-Length': rec.size,
-          'Content-Disposition': `attachment; filename="RemoteLink-${masterId}.apk"`,
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Content-Length',
         });
         fs.createReadStream(rec.path).pipe(res);
       })
