@@ -319,7 +319,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-    if (req.method === 'GET' && req.url.startsWith('/apk/')) {
+      if (req.method === 'GET' && req.url.startsWith('/apk/')) {
     // Strip optional .apk suffix and any query string
     const raw = req.url.split('?')[0];
     let masterId = (raw.split('/')[2] || '').trim().toUpperCase();
@@ -340,16 +340,53 @@ const server = http.createServer((req, res) => {
         const ms = Date.now() - t0;
         console.log(`✅ Built ${masterId} in ${ms}ms — ${(rec.size / 1024 / 1024).toFixed(1)} MB`);
 
-        // 🎯 IMPORTANT: Do NOT send Content-Disposition: attachment here.
-        // Electron treats it as a browser download and cancels the fetch
-        // with net::ERR_FAILED. The controller sets the filename on the
-        // client side via a.download — the server doesn't need to help.
+        const stat = fs.statSync(rec.path);
+        const totalSize = stat.size;
+        const rangeHeader = req.headers.range;
+
+        // ── Range request support ──────────────────────────────────
+        // Render's free-tier proxy kills responses at ~100s. Range
+        // requests let the client download in chunks — if a chunk dies,
+        // it resumes from where it stopped instead of losing everything.
+        if (rangeHeader) {
+          const m = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader.trim());
+          if (!m) {
+            res.writeHead(416, { 'Content-Range': `bytes */${totalSize}` });
+            return res.end();
+          }
+          const start = parseInt(m[1], 10);
+          const end = m[2] ? Math.min(parseInt(m[2], 10), totalSize - 1) : totalSize - 1;
+
+          if (start >= totalSize || start > end) {
+            res.writeHead(416, {
+              'Content-Range': `bytes */${totalSize}`,
+              'Access-Control-Allow-Origin': '*',
+            });
+            return res.end();
+          }
+
+          console.log(`↪ Range: bytes ${start}-${end}/${totalSize}`);
+          res.writeHead(206, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': end - start + 1,
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+          });
+          fs.createReadStream(rec.path, { start, end }).pipe(res);
+          return;
+        }
+
+        // ── Full download ─────────────────────────────────────────
         res.writeHead(200, {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': rec.size,
+          'Content-Length': totalSize,
+          'Accept-Ranges': 'bytes',
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Expose-Headers': 'Content-Length',
+          'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
         });
         fs.createReadStream(rec.path).pipe(res);
       })
