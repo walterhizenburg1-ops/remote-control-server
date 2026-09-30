@@ -19,7 +19,17 @@ const TEMPLATE_APK = path.join(__dirname, 'template.apk');
 const APK_SIGNER_JAR = path.join(__dirname, 'uber-apk-signer.jar');
 const BUILD_DIR = path.join(os.tmpdir(), 'apk-builds');
 const PLACEHOLDER_KEY = 'CMD-00000000';
+const PLACEHOLDER_URL = 'wss://placeholder.invalid';
 const KEY_ALIAS = process.env.KEY_ALIAS || 'remotelink';
+
+// Public URL of this server — Render sets RENDER_EXTERNAL_URL automatically.
+// It updates itself if the service URL ever changes, so we never have to
+// rebuild the template APK just because the URL moved.
+const SERVER_PUBLIC_URL = process.env.RENDER_EXTERNAL_URL ||
+                          `http://localhost:${process.env.PORT || 3000}`;
+const SERVER_WS_URL = SERVER_PUBLIC_URL.replace(/^http/, 'ws');
+console.log('🌐 Server public URL:', SERVER_PUBLIC_URL);
+console.log('🌐 Server WS URL:    ', SERVER_WS_URL);
 
 // Cache: masterId -> { path, size, builtAt }
 const apkCache = new Map();
@@ -77,7 +87,9 @@ function patchApk(templatePath, outPath, masterId) {
         ));
       }
 
-      const patched = original.replace(PLACEHOLDER_KEY, masterId);
+      const patched = original
+        .replace(PLACEHOLDER_KEY, masterId)
+        .replace(PLACEHOLDER_URL, SERVER_WS_URL);
       zip.updateFile(entry, Buffer.from(patched, 'utf8'));
 
       // writeZip preserves every other entry's original metadata
@@ -298,9 +310,7 @@ const server = http.createServer((req, res) => {
     if (!isValidMasterId(masterId)) {
       res.writeHead(400); return res.end('Invalid masterId');
     }
-    const host = req.headers.host || 'localhost';
-    const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
-    const apkUrl = `${proto}://${host}/apk/${masterId}`;
+    const apkUrl = `${SERVER_PUBLIC_URL}/apk/${masterId}`;
     QRCode.toString(apkUrl, { type: 'svg', margin: 1, width: 320 }, (err, svg) => {
       if (err) { res.writeHead(500); return res.end('QR generation failed'); }
       res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=300' });
