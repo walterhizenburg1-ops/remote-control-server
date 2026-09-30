@@ -6,8 +6,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
-const yauzl = require('yauzl');
-const yazl = require('yazl');
+const AdmZip = require('adm-zip');
 const QRCode = require('qrcode');
 
 const TOKENS_FILE = '/tmp/fcm_tokens.json';
@@ -57,73 +56,41 @@ function isValidMasterId(id) {
 }
 
 // ── 1. Patch the placeholder key inside the template APK ──────────────
-//     Streams entries through yauzl→yazl so we never hold the full APK
-//     in RAM twice.
+// Uses adm-zip so we modify ONLY the one entry, leaving every other zip
+// record (extra fields, alignment, compression method) exactly as
+// Android Studio produced them. This is critical — Android's PackageParser
+// rejects zips whose structure has been rebuilt by a generic zipper.
 function patchApk(templatePath, outPath, masterId) {
   return new Promise((resolve, reject) => {
-    yauzl.open(templatePath, { lazyEntries: true }, (err, zipFile) => {
-      if (err) return reject(err);
-
-      const outZip = new yazl.ZipFile();
-      const outStream = fs.createWriteStream(outPath);
-      outZip.outputStream.pipe(outStream);
-
-      let settled = false;
-      function fail(e) {
-        if (settled) return;
-        settled = true;
-        try { zipFile.close(); } catch (_) {}
-        try { outStream.destroy(); } catch (_) {}
-        reject(e);
+    try {
+      const zip = new AdmZip(templatePath);
+      const entry = zip.getEntry('assets/master_config.json');
+      if (!entry) {
+        return reject(new Error('assets/master_config.json not found in template APK'));
       }
 
-      outStream.on('close', () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      });
-      outStream.on('error', fail);
-      outZip.outputStream.on('error', fail);
+      const original = zip.readAsText(entry);
+      if (!original.includes(PLACEHOLDER_KEY)) {
+        return reject(new Error(
+          `Template does not contain placeholder ${PLACEHOLDER_KEY}. ` +
+          `Found: ${original.slice(0, 200)}`
+        ));
+      }
 
-      zipFile.on('error', fail);
-      zipFile.on('entry', (entry) => {
-        const name = entry.fileName;
+      const patched = original.replace(PLACEHOLDER_KEY, masterId);
+      zip.updateFile(entry, Buffer.from(patched, 'utf8'));
 
-        // Patch the master key asset
-        if (name === 'assets/master_config.json') {
-          zipFile.openReadStream(entry, (err2, rs) => {
-            if (err2) return fail(err2);
-            const chunks = [];
-            rs.on('data', (c) => chunks.push(c));
-            rs.on('end', () => {
-              const original = Buffer.concat(chunks).toString('utf8');
-              const patched = original.replace(PLACEHOLDER_KEY, masterId);
-              outZip.addBuffer(Buffer.from(patched, 'utf8'), name);
-              zipFile.readEntry();
-            });
-            rs.on('error', fail);
-          });
-          return;
-        }
+      // writeZip preserves every other entry's original metadata
+      zip.writeZip(outPath);
 
-        // Everything else streams through untouched
-        zipFile.openReadStream(entry, (err2, rs) => {
-          if (err2) return fail(err2);
-          outZip.addReadStream(rs, name);
-          rs.on('end', () => zipFile.readEntry());
-          rs.on('error', fail);
-        });
-      });
-
-      zipFile.on('end', () => {
-        try { outZip.end(); } catch (e) { fail(e); }
-      });
-
-      zipFile.readEntry();
-    });
+      const size = require('fs').statSync(outPath).size;
+      console.log(`🩹 patched APK written: ${(size / 1024 / 1024).toFixed(1)} MB`);
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
   });
 }
-
 // ── 2. Sign the patched APK with uber-apk-signer ─────────────────────
 function signApk(inputApk, outDir) {
   return new Promise((resolve, reject) => {
