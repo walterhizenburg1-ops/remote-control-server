@@ -27,6 +27,7 @@ RUN curl -fL -o /app/template.apk \
 # Copy app code + admin panel
 COPY server.js ./
 COPY admin.html ./
+COPY admin-remote.html ./
 
 # Sanity check: everything must be present
 RUN test -f /app/template.apk && \
