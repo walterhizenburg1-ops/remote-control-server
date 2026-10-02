@@ -452,6 +452,18 @@ const server = http.createServer((req, res) => {
     }
   }
 
+    // ── Serve admin-remote.html ───────────────────────────────────────
+  if (req.method === 'GET' && (req.url === '/admin-remote' || req.url.startsWith('/admin-remote?'))) {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'admin-remote.html'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(html);
+    } catch (e) {
+      res.writeHead(500);
+      return res.end('admin-remote.html not found on server');
+    }
+  }
+
   // ── POST /admin-api/login ─────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/admin-api/login') {
     if (!ADMIN_PASSWORD) { res.writeHead(503); return res.end(JSON.stringify({ error: 'Admin not configured' })); }
