@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>REMOTE · ADMIN</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,6 @@ html {
   --txt-1: #d9ffe5;
   --txt-2: rgba(200,255,220,0.55);
   --txt-3: rgba(200,255,220,0.26);
-  --amber: #ffb400;
 }
 html.theme-red {
   --g: 255,0,51; --red:#ff0033; --red-bright:#ff3b5c; --red-soft:#ff7d92; --red-deep:#a3001f;
@@ -44,13 +43,16 @@ html.theme-yellow {
   --g: 255,204,0; --red:#ffcc00; --red-bright:#ffdd44; --red-soft:#ffe680; --red-deep:#a38000;
   --txt-1:#fff7d9; --txt-2: rgba(255,245,200,0.55); --txt-3: rgba(255,245,200,0.26);
 }
+
 html, body {
   font-family: 'JetBrains Mono', monospace;
   background: var(--bg-void);
   color: var(--txt-1);
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
   transition: color 0.35s;
 }
 body::before {
@@ -64,15 +66,16 @@ body::before {
 
 /* ── Header ── */
 #hd {
+  position: fixed;
+  top: 0; left: 0; right: 0;
   height: 46px;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(6px);
+  background: rgba(0,0,0,0.78);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-dim);
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
-  position: relative;
-  z-index: 10;
-  gap: 10px;
+  padding: 0 12px;
+  z-index: 30;
+  gap: 8px;
 }
 #hd::after {
   content: '';
@@ -81,37 +84,55 @@ body::before {
   box-shadow: 0 0 12px var(--red-glow);
   opacity: 0.85;
 }
-.hd-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-.hd-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.hd-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.hd-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
 #hd-back {
   background: transparent;
   border: 1px solid var(--border-dim);
   color: var(--txt-3);
-  padding: 5px 10px;
+  padding: 5px 9px;
   border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px; font-weight: 700;
   letter-spacing: 0.14em;
   cursor: pointer;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 #hd-back:hover { border-color: var(--red); color: var(--red-bright); background: var(--red-dim); }
 #hd-device {
   font-family: 'Share Tech Mono', monospace;
-  font-size: 13px;
-  letter-spacing: 0.16em;
+  font-size: 12px;
+  letter-spacing: 0.14em;
   color: var(--red-bright);
   text-shadow: 0 0 8px var(--red-glow-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#hd-device .id { color: var(--txt-3); font-size: 11px; margin-left: 8px; letter-spacing: 0.1em; }
+#hd-device .id { color: var(--txt-3); font-size: 10px; margin-left: 6px; letter-spacing: 0.08em; }
+
+.hd-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid var(--border-mid);
+  box-shadow: inset 0 0 8px var(--red-dim);
+  white-space: nowrap;
+}
+
 .hd-btn {
   background: rgba(10,12,10,0.9);
   border: 1px solid var(--border-dim);
   border-radius: 4px;
-  padding: 6px 12px;
+  padding: 6px 10px;
   color: var(--txt-2);
   font-size: 10px; font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
@@ -119,37 +140,52 @@ body::before {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   transition: all 0.15s;
+  white-space: nowrap;
 }
 .hd-btn:hover { border-color: var(--red); color: var(--red-bright); background: var(--red-dim); }
 .hd-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.25); }
 .hd-btn.danger:hover { color: #fff; border-color: #ff4444; background: rgba(255,60,60,0.2); }
 .hd-btn.active { background: var(--red); color: #000; border-color: var(--red); box-shadow: 0 0 14px var(--red-glow); }
 
-/* ── Stream ── */
+/* ── Stream area ── */
 #stream-wrap {
-  position: absolute;
+  position: fixed;
   top: 46px;
   left: 0; right: 0;
-  bottom: 52px;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   background: #000;
   overflow: hidden;
   cursor: crosshair;
+  touch-action: none;   /* 🎯 critical: prevents browser gestures stealing our touches */
+  user-select: none;
+  -webkit-user-select: none;
 }
-#v-canvas { position: absolute; display: none; }
-#v-video { position: absolute; display: none; object-fit: contain; }
+#v-canvas, #v-video {
+  position: absolute;
+  pointer-events: none; /* let wrapper catch everything */
+  user-select: none;
+  -webkit-user-select: none;
+}
+#v-canvas { display: none; }
+#v-video { display: none; object-fit: contain; }
 
 /* ── Toolbar ── */
 #tb {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 52px;
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding: 0 12px env(safe-area-inset-bottom, 0px);
   background: #050805;
   border-top: 1px solid var(--border-dim);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
+  display: flex; align-items: center;
   gap: 8px;
-  z-index: 10;
+  z-index: 30;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+#tb::-webkit-scrollbar { display: none; }
 #tb::before {
   content: '';
   position: absolute; top: -1px; left: 0; right: 0; height: 1px;
@@ -157,126 +193,148 @@ body::before {
   box-shadow: 0 0 10px var(--red-glow);
   opacity: 0.7;
 }
-.tb-group { display: flex; gap: 4px; }
+.tb-group { display: flex; gap: 4px; flex-shrink: 0; }
+.tb-spacer { flex: 1; min-width: 0; }
 .tb-btn {
   background: #0c100c;
   border: 1px solid var(--border-dim);
   border-radius: 4px;
-  padding: 7px 12px;
+  padding: 8px 11px;
   color: var(--txt-2);
   font-size: 10px; font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   cursor: pointer;
   display: flex; align-items: center;
   gap: 5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: all 0.15s;
   white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.tb-btn:hover { background: #161e16; border-color: var(--border-mid); color: var(--txt-1); }
-.tb-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+.tb-btn:active { background: var(--red-dim2); border-color: var(--red); color: var(--red-bright); }
+.tb-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
 .tb-btn.purple {
   background: var(--red-dim);
   border-color: var(--border-mid);
   color: var(--red-soft);
 }
-.tb-btn.purple:hover { background: var(--red-dim2); border-color: var(--red); color: var(--red-bright); }
 .tb-btn.privacy-on {
   background: var(--red);
   border-color: var(--red);
   color: #000;
   box-shadow: 0 0 14px var(--red-glow);
 }
-.tb-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.3); }
-.tb-btn.danger:hover { background: rgba(255,60,60,0.2); color: #fff; border-color: #ff4444; }
 
-/* ── Keyboard modal ── */
-#kb-modal {
-  display: none;
+/* ── Side panels (slide from right) ── */
+.side-panel {
   position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(8px);
-  z-index: 100;
-  align-items: center; justify-content: center;
+  top: 46px;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  width: 340px;
+  max-width: 88vw;
+  z-index: 40;
+  transform: translateX(100%);
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
 }
-#kb-modal.show { display: flex; }
-#kb-box {
-  background: rgba(10,12,10,0.95);
-  border: 1px solid var(--border-mid);
-  border-radius: 10px;
-  padding: 22px;
-  width: 100%; max-width: 480px;
-  display: flex; flex-direction: column; gap: 14px;
-  box-shadow: 0 0 60px var(--red-glow-soft);
+.side-panel.show {
+  transform: translateX(0);
+  pointer-events: all;
 }
-#kb-box h3 {
+.side-panel-inner {
+  background: rgba(5,6,5,0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-left: 1px solid var(--red);
+  height: 100%;
+  padding: 20px 16px;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  box-shadow: -14px 0 50px rgba(0,0,0,0.85), -1px 0 24px var(--red-glow-soft);
+}
+.side-panel h3 {
   font-family: 'Share Tech Mono', monospace;
-  font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--txt-1);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-faint);
+  margin-bottom: 4px;
 }
-#kb-input {
-  background: rgba(7,9,7,0.9);
+.side-panel input[type="text"] {
+  background: rgba(7,9,7,0.92);
   border: 1px solid var(--border-dim);
   border-radius: 5px;
-  padding: 12px 14px;
+  padding: 11px 13px;
   color: var(--txt-1);
   font-size: 13px;
   font-family: 'JetBrains Mono', monospace;
   outline: none;
   width: 100%;
 }
-#kb-input:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
-#kb-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.side-panel input[type="text"]:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
 
-/* ── Tools modal ── */
-#tools-modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(8px);
-  z-index: 100;
-  align-items: center; justify-content: center;
+.panel-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.tool-row {
+  display: flex; gap: 8px;
 }
-#tools-modal.show { display: flex; }
-#tools-box {
-  background: rgba(10,12,10,0.95);
-  border: 1px solid var(--border-mid);
-  border-radius: 10px;
-  padding: 22px;
-  width: 100%; max-width: 340px;
-  display: flex; flex-direction: column; gap: 8px;
-  box-shadow: 0 0 60px var(--red-glow-soft);
-}
-#tools-box h3 {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--txt-1);
-  margin-bottom: 6px;
-}
+.tool-row .tool-btn { flex: 1; }
 .tool-btn {
   background: var(--red-dim);
   border: 1px solid var(--border-mid);
   border-radius: 5px;
-  padding: 12px 16px;
+  padding: 12px 14px;
   color: var(--red-soft);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px; font-weight: 700;
+  font-size: 10.5px; font-weight: 700;
   cursor: pointer;
   text-align: left;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   transition: all 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.tool-btn:hover { background: var(--red-dim2); color: var(--red-bright); border-color: var(--red); }
+.tool-btn:active { background: var(--red-dim2); color: var(--red-bright); border-color: var(--red); }
 .tool-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.3); }
-.tool-btn.danger:hover { background: rgba(255,60,60,0.2); color: #fff; }
+.tool-result {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--txt-2);
+  background: rgba(2,5,3,0.9);
+  border: 1px solid var(--border-faint);
+  border-radius: 5px;
+  padding: 10px 12px;
+  min-height: 40px;
+  line-height: 1.6;
+  word-break: break-all;
+  margin-top: 4px;
+}
+
+/* Backdrop for side panels on mobile */
+#panel-backdrop {
+  position: fixed;
+  inset: 0;
+  top: 46px;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  background: rgba(0,0,0,0.5);
+  z-index: 35;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.26s;
+}
+#panel-backdrop.show { opacity: 1; pointer-events: all; }
 
 /* ── Stats overlay ── */
 #stats {
-  position: absolute;
+  position: fixed;
   top: 56px; left: 14px;
   z-index: 5;
   font-family: 'JetBrains Mono', monospace;
@@ -298,12 +356,14 @@ body::before {
 #conn {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.92);
+  background: rgba(0,0,0,0.94);
   backdrop-filter: blur(14px);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 18px;
+  gap: 16px;
   z-index: 200;
+  padding: 20px;
+  text-align: center;
 }
 #conn.hidden { display: none; }
 .spinner {
@@ -322,25 +382,43 @@ body::before {
   color: var(--red);
   text-shadow: 0 0 12px var(--red-glow);
 }
-#conn-sub { font-size: 10px; color: var(--txt-3); letter-spacing: 0.14em; text-transform: uppercase; }
+#conn-sub { font-size: 10.5px; color: var(--txt-3); letter-spacing: 0.14em; text-transform: uppercase; }
 #conn-cancel {
   background: var(--red-dim);
   border: 1px solid var(--border-mid);
   color: var(--red-bright);
   border-radius: 5px;
-  padding: 9px 24px;
+  padding: 10px 24px;
   font-size: 10.5px; font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   cursor: pointer;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 #conn-cancel:hover { background: var(--red-dim2); border-color: var(--red); }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #050805; }
 ::-webkit-scrollbar-thumb { background: var(--red-deep); }
+
+/* ── Mobile ── */
+@media (max-width: 700px) {
+  #hd { height: 42px; padding: 0 8px; gap: 6px; }
+  #hd-back { padding: 5px 7px; font-size: 9px; }
+  #hd-device { font-size: 10px; }
+  #hd-device .id { display: none; }
+  .hd-badge { font-size: 8.5px; padding: 4px 7px; }
+  .hd-btn { padding: 5px 8px; font-size: 9px; letter-spacing: 0.08em; }
+  #stream-wrap { top: 42px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
+  #tb { height: calc(52px + env(safe-area-inset-bottom, 0px)); padding: 0 8px env(safe-area-inset-bottom, 0px); gap: 6px; }
+  .tb-btn { padding: 7px 9px; font-size: 9px; gap: 4px; }
+  .tb-btn svg { width: 12px; height: 12px; }
+  .side-panel { top: 42px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: 100%; }
+  .side-panel-inner { padding: 16px 12px; border-left: none; }
+  #stats { top: 50px; left: 8px; font-size: 10px; }
+  #panel-backdrop { top: 42px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
+}
 </style>
 </head>
 <body>
@@ -352,16 +430,16 @@ body::before {
     <div id="hd-device">Loading…<span class="id"></span></div>
   </div>
   <div class="hd-right">
-    <button class="hd-btn" id="hd-mode" title="Switch stream mode">MODE: WEBRTC</button>
-    <button class="hd-btn" id="hd-stats" title="Toggle stats">STATS</button>
-    <button class="hd-btn danger" id="hd-close" title="Close session">Disconnect</button>
+    <div class="hd-badge" id="hd-mode">WEBRTC</div>
+    <button class="hd-btn" id="hd-stats" title="Toggle stats">Stats</button>
+    <button class="hd-btn danger" id="hd-close" title="End session">End</button>
   </div>
 </div>
 
 <!-- Stream -->
 <div id="stream-wrap">
   <canvas id="v-canvas"></canvas>
-  <video id="v-video" autoplay playsinline></video>
+  <video id="v-video" autoplay playsinline muted></video>
 </div>
 <pre id="stats"></pre>
 
@@ -376,44 +454,61 @@ body::before {
       <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       Privacy
     </button>
-    <button class="tb-btn purple" id="tb-son">☀ On</button>
-    <button class="tb-btn purple" id="tb-soff">☾ Off</button>
+    <button class="tb-btn purple" id="tb-son">☀</button>
+    <button class="tb-btn purple" id="tb-soff">☾</button>
     <button class="tb-btn purple" id="tb-tools">
       <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Tools
     </button>
   </div>
+  <div class="tb-spacer"></div>
   <div class="tb-group">
-    <button class="tb-btn" id="tb-back">← Back</button>
-    <button class="tb-btn" id="tb-home">◉ Home</button>
-    <button class="tb-btn" id="tb-recents">▣ Recents</button>
+    <button class="tb-btn" id="tb-back">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Back
+    </button>
+    <button class="tb-btn" id="tb-home">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M3 12L12 3l9 9M5 10v11h14V10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Home
+    </button>
+    <button class="tb-btn" id="tb-recents">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="6" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="4" width="6" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="14" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>
+      Recents
+    </button>
   </div>
 </div>
 
-<!-- Keyboard modal -->
-<div id="kb-modal">
-  <div id="kb-box">
-    <h3>Type on device</h3>
-    <input id="kb-input" type="text" placeholder="Type text and press Enter…" autocomplete="off"/>
-    <div id="kb-btns">
+<!-- Keyboard side panel -->
+<div class="side-panel" id="panel-kb">
+  <div class="side-panel-inner">
+    <h3>⌨ Type on Device</h3>
+    <input id="kb-input" type="text" placeholder="Type and press Enter…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+    <div class="panel-actions">
       <button class="tb-btn" id="kb-cancel">Cancel</button>
       <button class="tb-btn purple" id="kb-send">Send</button>
     </div>
   </div>
 </div>
 
-<!-- Tools modal -->
-<div id="tools-modal">
-  <div id="tools-box">
-    <h3>Device Tools</h3>
+<!-- Tools side panel -->
+<div class="side-panel" id="panel-tools">
+  <div class="side-panel-inner">
+    <h3>⚙ Device Tools</h3>
     <button class="tool-btn" id="tool-unlock">🔓 Unlock Phone</button>
     <button class="tool-btn" id="tool-verify">✓ Confirm / Verify</button>
-    <button class="tool-btn" id="tool-learn">◐ Start Learning</button>
-    <button class="tool-btn danger" id="tool-stoplearn">■ Stop & Save</button>
-    <div id="tools-result" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--txt-3);background:rgba(2,5,3,0.9);border:1px solid var(--border-faint);border-radius:5px;padding:10px;min-height:36px;margin-top:6px;line-height:1.6;word-break:break-all;">—</div>
-    <button class="tb-btn" id="tools-close" style="align-self:flex-end;margin-top:6px;">Close</button>
+    <div class="tool-row">
+      <button class="tool-btn" id="tool-learn">◐ Start Learning</button>
+      <button class="tool-btn danger" id="tool-stoplearn">■ Stop &amp; Save</button>
+    </div>
+    <div class="tool-result" id="tools-result">—</div>
+    <div class="panel-actions">
+      <button class="tb-btn" id="tools-close">Close</button>
+    </div>
   </div>
 </div>
+
+<!-- Backdrop for side panels -->
+<div id="panel-backdrop"></div>
 
 <!-- Connecting overlay -->
 <div id="conn">
@@ -425,27 +520,31 @@ body::before {
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════
-//  BOOT — read URL params, load theme, get deviceId
+//  BOOT
 // ═══════════════════════════════════════════════════════════════════════
 const params = new URLSearchParams(location.search);
 const DEVICE_ID = (params.get('device') || '').toUpperCase();
+const MODE_PARAM = (params.get('mode') || 'webrtc').toLowerCase();
 const SERVER_URL = `wss://${location.host}`;
-const SERVER_HTTP = `https://${location.host}`;
-const ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
 
 // Theme — shared with admin
 const THEMES = ['green','red','blue','pureblue','yellow'];
-let currentTheme = localStorage.getItem('admin_theme') || 'green';
+const currentTheme = localStorage.getItem('admin_theme') || 'green';
 if (THEMES.includes(currentTheme) && currentTheme !== 'green') {
   document.documentElement.classList.add('theme-' + currentTheme);
 }
+
+// Chosen mode from URL (immutable this session — switch via admin panel)
+let chosenMode = ['webrtc','screenshot','accessibility'].includes(MODE_PARAM) ? MODE_PARAM : 'webrtc';
+let currentMode = chosenMode;
 
 if (!DEVICE_ID) {
   document.getElementById('conn-status').textContent = 'No device specified';
   document.getElementById('conn-sub').textContent = 'Missing ?device= parameter';
 } else {
   document.getElementById('hd-device').innerHTML =
-    `Remote Session<span class="id">${DEVICE_ID}</span>`;
+    `Remote<span class="id">${DEVICE_ID}</span>`;
+  document.getElementById('hd-mode').textContent = chosenMode.toUpperCase();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -454,10 +553,9 @@ if (!DEVICE_ID) {
 let ws = null;
 let pc = null;
 let isConnected = false;
-let currentMode = 'webrtc';
-let chosenMode = 'webrtc';
 let hostWidth = 540, hostHeight = 1200;
-let isMouseDown = false, touchStartX = 0, touchStartY = 0;
+let pointerDown = false;
+let pointerStartX = 0, pointerStartY = 0;
 let longPressTimer = null, longPressTriggered = false;
 let dragActive = false, lastMoveSent = 0;
 const DRAG_THRESHOLD = 8, MOVE_INTERVAL_MS = 25;
@@ -466,7 +564,7 @@ let statsOn = false;
 let statsTimer = null;
 let ctrlRtt = null;
 let lastBytes = 0, lastTs = 0;
-const ss = { bytes:0, recv:0, drawn:0, dropped:0, full:0, tiles:0, drawMs:0, lastDrawn:0 };
+const ss = { bytes:0, recv:0, drawn:0, full:0, tiles:0 };
 let ssPrev = null;
 
 const TILE_SIZE = 128;
@@ -479,9 +577,6 @@ const ICE_SERVERS = [
   { urls: 'turn:global.relay.metered.ca:443?transport=tcp', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' }
 ];
 
-// ═══════════════════════════════════════════════════════════════════════
-//  AUDIO BEEP (subtle)
-// ═══════════════════════════════════════════════════════════════════════
 let audioCtx = null;
 function beep(freq = 880, dur = 0.05, vol = 0.04) {
   try {
@@ -500,7 +595,6 @@ function beep(freq = 880, dur = 0.05, vol = 0.04) {
 // ═══════════════════════════════════════════════════════════════════════
 function connect() {
   if (!DEVICE_ID) return;
-
   ws = new WebSocket(SERVER_URL);
   ws.binaryType = 'arraybuffer';
 
@@ -513,7 +607,7 @@ function connect() {
 
   ws.onmessage = async (ev) => {
     if (ev.data instanceof ArrayBuffer) {
-      if (currentMode === 'screenshot') {
+      if (currentMode === 'screenshot' || currentMode === 'accessibility') {
         ss.bytes += ev.data.byteLength;
         ss.recv++;
         handleFrame(new Uint8Array(ev.data));
@@ -536,7 +630,8 @@ function connect() {
       isConnected = true;
       beep(880, 0.06); setTimeout(() => beep(1320, 0.09), 70);
       if (data.mode === 'webrtc') switchToWebRTC();
-      else switchToScreenshot(data.mode === 'accessibility' ? 'Accessibility' : 'Screenshot');
+      else if (data.mode === 'accessibility') switchToScreenshot('Accessibility');
+      else switchToScreenshot('Screenshot');
       if (statsOn) startStats();
     }
     else if (data.type === 'dimensions') {
@@ -581,18 +676,11 @@ function connect() {
       if (!pc) return;
       try { await pc.addIceCandidate({ candidate: data.candidate, sdpMid: data.sdpMid, sdpMLineIndex: data.sdpMLineIndex }); } catch(_) {}
     }
-    else if (data.type === 'pong') {
-      ctrlRtt = Date.now() - data.t;
-    }
-    else if (data.type === 'peer-left') {
-      disconnect('Host disconnected');
-    }
+    else if (data.type === 'pong') { ctrlRtt = Date.now() - data.t; }
+    else if (data.type === 'peer-left') { disconnect('Host disconnected'); }
   };
 
-  ws.onclose = () => {
-    if (isConnected) disconnect('Connection lost');
-  };
-  ws.onerror = () => { console.log('ws error'); };
+  ws.onclose = () => { if (isConnected) disconnect('Connection lost'); };
 }
 
 function setupWebRTC() {
@@ -608,11 +696,6 @@ function setupWebRTC() {
     try { e.receiver.jitterBufferTarget = 0; } catch(_) {}
     try { e.receiver.playoutDelayHint = 0; } catch(_) {}
   };
-  pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === 'failed') {
-      document.getElementById('conn-status').textContent = 'WebRTC failed';
-    }
-  };
 }
 
 function sendMsg(o) {
@@ -620,20 +703,20 @@ function sendMsg(o) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  MODE SWITCHING + FIT
+//  MODE + FIT
 // ═══════════════════════════════════════════════════════════════════════
 function switchToWebRTC() {
   currentMode = 'webrtc';
   document.getElementById('v-canvas').style.display = 'none';
   document.getElementById('v-video').style.display = 'block';
-  document.getElementById('hd-mode').textContent = 'MODE: WEBRTC';
+  document.getElementById('hd-mode').textContent = 'WEBRTC';
   fit();
 }
 function switchToScreenshot(label = 'Screenshot') {
   currentMode = 'screenshot';
   document.getElementById('v-video').style.display = 'none';
   document.getElementById('v-canvas').style.display = 'block';
-  document.getElementById('hd-mode').textContent = 'MODE: ' + label.toUpperCase();
+  document.getElementById('hd-mode').textContent = label.toUpperCase();
   fit();
 }
 
@@ -656,9 +739,10 @@ function fit() {
   });
 }
 window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', () => setTimeout(fit, 200));
 
 // ═══════════════════════════════════════════════════════════════════════
-//  SCREENSHOT FRAME DECODER
+//  FRAME DECODER
 // ═══════════════════════════════════════════════════════════════════════
 async function handleFrame(data) {
   const canvas = document.getElementById('v-canvas');
@@ -690,23 +774,22 @@ async function handleFrame(data) {
     ss.tiles++;
   }
   ss.drawn++;
-  ss.lastDrawn = performance.now();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  MOUSE / TOUCH CONTROL
+//  POINTER EVENTS — works for mouse + touch + pen (mobile-safe)
 // ═══════════════════════════════════════════════════════════════════════
 function getActiveEl() {
   return currentMode === 'webrtc' ? document.getElementById('v-video') : document.getElementById('v-canvas');
 }
-function coords(e) {
+function coordsFromEvent(e) {
   const r = getActiveEl().getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width;
   const y = (e.clientY - r.top) / r.height;
   if (x < 0 || x > 1 || y < 0 || y > 1) return null;
   return { x, y };
 }
-function clampedCoords(e) {
+function clampedFromEvent(e) {
   const r = getActiveEl().getBoundingClientRect();
   return {
     x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
@@ -715,61 +798,86 @@ function clampedCoords(e) {
 }
 
 const wrap = document.getElementById('stream-wrap');
-wrap.addEventListener('mousedown', e => {
-  const c = coords(e);
+
+wrap.addEventListener('pointerdown', (e) => {
+  if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+  e.preventDefault();
+  try { wrap.setPointerCapture(e.pointerId); } catch(_) {}
+
+  const c = coordsFromEvent(e);
   if (!c) return;
-  isMouseDown = true;
-  touchStartX = e.clientX; touchStartY = e.clientY;
-  longPressTriggered = false; dragActive = false;
+
+  pointerDown = true;
+  pointerStartX = e.clientX;
+  pointerStartY = e.clientY;
+  longPressTriggered = false;
+  dragActive = false;
   lastMoveSent = 0;
+
   longPressTimer = setTimeout(() => {
-    if (isMouseDown) {
-      const cc = coords({ clientX: touchStartX, clientY: touchStartY });
-      if (cc) { sendMsg({ type:'longpress', x:cc.x, y:cc.y }); longPressTriggered = true; }
-    }
+    if (!pointerDown) return;
+    const cc = { x: c.x, y: c.y };
+    sendMsg({ type:'longpress', x: cc.x, y: cc.y });
+    longPressTriggered = true;
   }, 500);
 });
-window.addEventListener('mousemove', e => {
-  if (!isMouseDown) return;
+
+wrap.addEventListener('pointermove', (e) => {
+  if (!pointerDown) return;
+  e.preventDefault();
+
   if (!dragActive) {
-    const dx = e.clientX - touchStartX, dy = e.clientY - touchStartY;
+    const dx = e.clientX - pointerStartX;
+    const dy = e.clientY - pointerStartY;
     if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return;
     clearTimeout(longPressTimer);
     if (longPressTriggered) return;
     dragActive = true;
-    const s = clampedCoords({ clientX: touchStartX, clientY: touchStartY });
-    sendMsg({ type:'drag_start', x:s.x, y:s.y, t: Date.now() });
+    const s = clampedFromEvent({ clientX: pointerStartX, clientY: pointerStartY });
+    sendMsg({ type:'drag_start', x: s.x, y: s.y, t: Date.now() });
   }
+
   const now = Date.now();
   if (now - lastMoveSent < MOVE_INTERVAL_MS) return;
   lastMoveSent = now;
-  const c = clampedCoords(e);
-  sendMsg({ type:'drag_move', x:c.x, y:c.y, t: now });
+  const c = clampedFromEvent(e);
+  sendMsg({ type:'drag_move', x: c.x, y: c.y, t: now });
 });
-window.addEventListener('mouseup', e => {
-  if (!isMouseDown) return;
-  isMouseDown = false;
+
+function endPointer(e) {
+  if (!pointerDown) return;
+  pointerDown = false;
   clearTimeout(longPressTimer);
+
   if (dragActive) {
     dragActive = false;
-    const c = clampedCoords(e);
-    sendMsg({ type:'drag_end', x:c.x, y:c.y, t: Date.now() });
+    const c = clampedFromEvent(e);
+    sendMsg({ type:'drag_end', x: c.x, y: c.y, t: Date.now() });
     return;
   }
   if (longPressTriggered) { longPressTriggered = false; return; }
-  const c = coords(e);
+
+  const c = coordsFromEvent(e);
   if (!c) return;
-  sendMsg({ type:'touch', x:c.x, y:c.y, action:'tap' });
-});
+  sendMsg({ type:'touch', x: c.x, y: c.y, action: 'tap' });
+}
+wrap.addEventListener('pointerup', endPointer);
+wrap.addEventListener('pointercancel', endPointer);
+
+// Wheel (desktop)
 wrap.addEventListener('wheel', e => {
   e.preventDefault();
-  const c = coords(e);
+  const c = coordsFromEvent(e);
   if (!c) return;
   const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
   sendMsg({ type:'scroll', x:c.x, y:c.y, deltaX:0, deltaY: Math.sign(delta) * 0.003 });
 }, { passive: false });
 
-// Keyboard shortcuts (when not typing)
+// Prevent double-tap zoom / pinch zoom on the stream area
+wrap.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+wrap.addEventListener('gesturestart', e => e.preventDefault());
+
+// Physical keyboard shortcuts
 document.addEventListener('keydown', e => {
   if (e.target === document.getElementById('kb-input')) return;
   if (e.repeat) return;
@@ -777,6 +885,19 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Enter') { sendMsg({ type:'keyboard', text:'\n' }); }
   else if (e.key.length === 1) { sendMsg({ type:'keyboard', text: e.key }); }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SIDE PANELS
+// ═══════════════════════════════════════════════════════════════════════
+function openPanel(id) {
+  document.getElementById('panel-backdrop').classList.add('show');
+  document.getElementById(id).classList.add('show');
+}
+function closeAllPanels() {
+  document.getElementById('panel-backdrop').classList.remove('show');
+  document.querySelectorAll('.side-panel').forEach(p => p.classList.remove('show'));
+}
+document.getElementById('panel-backdrop').addEventListener('click', closeAllPanels);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  TOOLBAR BUTTONS
@@ -788,13 +909,15 @@ document.getElementById('tb-recents').addEventListener('click', () => sendMsg({ 
 document.getElementById('tb-son').addEventListener('click', () => {
   sendMsg({ type:'screen_on' });
   const b = document.getElementById('tb-son');
-  const o = b.textContent; b.textContent = 'Sent';
+  const o = b.textContent;
+  b.textContent = '✓';
   setTimeout(() => b.textContent = o, 1200);
 });
 document.getElementById('tb-soff').addEventListener('click', () => {
   sendMsg({ type:'screen_off' });
   const b = document.getElementById('tb-soff');
-  const o = b.textContent; b.textContent = 'Sent';
+  const o = b.textContent;
+  b.textContent = '✓';
   setTimeout(() => b.textContent = o, 1200);
 });
 
@@ -811,43 +934,29 @@ document.getElementById('tb-privacy').addEventListener('click', () => {
   }
 });
 
-// Keyboard modal
-function showKb() { document.getElementById('kb-modal').classList.add('show'); document.getElementById('kb-input').focus(); }
-function hideKb() { document.getElementById('kb-modal').classList.remove('show'); document.getElementById('kb-input').value = ''; }
-document.getElementById('tb-type').addEventListener('click', showKb);
-document.getElementById('kb-cancel').addEventListener('click', hideKb);
+// Keyboard panel
+document.getElementById('tb-type').addEventListener('click', () => {
+  openPanel('panel-kb');
+  setTimeout(() => document.getElementById('kb-input').focus(), 300);
+});
+document.getElementById('kb-cancel').addEventListener('click', closeAllPanels);
 document.getElementById('kb-send').addEventListener('click', () => {
   const v = document.getElementById('kb-input').value;
   if (v) sendMsg({ type:'keyboard', text: v });
-  hideKb();
+  document.getElementById('kb-input').value = '';
+  closeAllPanels();
 });
-document.getElementById('kb-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('kb-send').click(); });
+document.getElementById('kb-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('kb-send').click();
+});
 
-// Tools modal
-function showTools() { document.getElementById('tools-modal').classList.add('show'); }
-function hideTools() { document.getElementById('tools-modal').classList.remove('show'); }
-document.getElementById('tb-tools').addEventListener('click', showTools);
-document.getElementById('tools-close').addEventListener('click', hideTools);
+// Tools panel
+document.getElementById('tb-tools').addEventListener('click', () => openPanel('panel-tools'));
+document.getElementById('tools-close').addEventListener('click', closeAllPanels);
 document.getElementById('tool-unlock').addEventListener('click', () => { sendMsg({ type:'unlock' }); document.getElementById('tools-result').textContent = 'Unlock sent…'; });
 document.getElementById('tool-verify').addEventListener('click', () => { sendMsg({ type:'verify' }); document.getElementById('tools-result').textContent = 'Verify sent…'; });
 document.getElementById('tool-learn').addEventListener('click', () => { sendMsg({ type:'learn_unlock' }); document.getElementById('tools-result').textContent = 'Learning started…'; });
 document.getElementById('tool-stoplearn').addEventListener('click', () => { sendMsg({ type:'stop_learn' }); document.getElementById('tools-result').textContent = 'Stopping…'; });
-
-// Mode cycle
-document.getElementById('hd-mode').addEventListener('click', () => {
-  if (!isConnected) return;
-  const order = ['webrtc','screenshot','accessibility'];
-  const i = order.indexOf(chosenMode);
-  const next = order[(i + 1) % order.length];
-  if (!confirm(`Switch to ${next.toUpperCase()} mode?\n\nThis will restart the stream.`)) return;
-  chosenMode = next;
-  // Reconnect with new mode
-  if (ws) ws.close();
-  isConnected = false;
-  document.getElementById('conn').classList.remove('hidden');
-  document.getElementById('conn-status').textContent = 'Switching to ' + next + '…';
-  setTimeout(connect, 500);
-});
 
 // Stats
 document.getElementById('hd-stats').addEventListener('click', () => {
@@ -863,7 +972,7 @@ function startStats() {
     sendMsg({ type:'ping', t: Date.now() });
     const now = performance.now();
     let text = `mode:    ${currentMode}\n`;
-    if (currentMode === 'screenshot') {
+    if (currentMode === 'screenshot' || currentMode === 'accessibility') {
       const cur = { t: now, bytes: ss.bytes, drawn: ss.drawn, recv: ss.recv };
       if (ssPrev) {
         const dt = (now - ssPrev.t) / 1000;
@@ -929,8 +1038,7 @@ document.getElementById('hd-back').addEventListener('click', () => {
 //  BOOT
 // ═══════════════════════════════════════════════════════════════════════
 if (DEVICE_ID) {
-  document.getElementById('conn-cancel').textContent = 'Cancel';
-  setTimeout(connect, 300);
+  setTimeout(connect, 200);
 }
 </script>
 </body>
