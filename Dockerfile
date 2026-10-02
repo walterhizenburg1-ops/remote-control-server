@@ -20,7 +20,7 @@ RUN curl -fL -o /app/uber-apk-signer.jar \
     https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar
 
 # Download the template APK from the GitHub Release.
-# ⬇️⬇️⬇️  REPLACE THIS URL WITH YOURS FROM STEP A.6  ⬇️⬇️
+# ⬇️⬇️  REPLACE THIS URL WITH YOURS FROM STEP A.6  ⬇️⬇️
 RUN curl -fL -o /app/template.apk \
     https://github.com/walterhizenburg1-ops/remote-control-server/releases/download/v1-template/template.apk
 
