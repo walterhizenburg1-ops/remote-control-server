@@ -443,13 +443,13 @@ header .hdr-right { display: flex; gap: 8px; align-items: center; }
     <div class="tab-panel" id="p-devices">
       <input class="search-bar" id="device-search" placeholder="Search by ID, name, or fleet…"/>
       <table class="tbl">
-        <thead><tr>
-          <th style="width:120px;">Device ID</th>
+               <thead><tr>
+          <th style="width:110px;">Device ID</th>
           <th>Name</th>
-          <th style="width:150px;">Fleet</th>
-          <th style="width:100px;">State</th>
-          <th style="width:130px;">Last Seen</th>
-          <th style="width:80px; text-align:right;">Actions</th>
+          <th style="width:130px;">Fleet</th>
+          <th style="width:90px;">State</th>
+          <th style="width:110px;">Last Seen</th>
+          <th style="width:250px; text-align:right;">Actions</th>
         </tr></thead>
         <tbody id="devices-body"><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
       </table>
@@ -692,8 +692,10 @@ function renderDevices(devices) {
       <td class="mono tiny">${esc(d.fleet)}</td>
       <td><span class="badge ${d.state}">${d.state}</span></td>
       <td class="dim tiny">${esc(fmtAgo(d.lastSeen))}</td>
-            <td style="text-align:right;">
-        <button class="btn tiny" data-remote-device="${esc(d.id)}" title="Open remote session">Remote</button>
+                 <td style="text-align:right;">
+        <button class="btn tiny" data-remote-device="${esc(d.id)}" data-mode="webrtc" title="Open WebRTC session">WebRTC</button>
+        <button class="btn tiny" data-remote-device="${esc(d.id)}" data-mode="screenshot" title="Open Screenshot session">Shot</button>
+        <button class="btn tiny" data-remote-device="${esc(d.id)}" data-mode="accessibility" title="Open Accessibility session">Access</button>
         <button class="btn tiny danger" data-del-device="${esc(d.id)}">Del</button>
       </td>
     </tr>
@@ -701,8 +703,8 @@ function renderDevices(devices) {
     el.querySelectorAll('[data-del-device]').forEach(btn => {
     btn.addEventListener('click', () => deleteDevice(btn.dataset.delDevice));
   });
-  el.querySelectorAll('[data-remote-device]').forEach(btn => {
-    btn.addEventListener('click', () => openRemote(btn.dataset.remoteDevice));
+   el.querySelectorAll('[data-remote-device]').forEach(btn => {
+    btn.addEventListener('click', () => openRemote(btn.dataset.remoteDevice, btn.dataset.mode));
   });
 }
 
@@ -741,9 +743,7 @@ async function deleteDevice(id) {
     refreshDevices(); refreshStats();
   } catch (e) { toast('Delete failed: ' + e.message, true); }
 }
- // ── Open remote session in a new tab ─────────────────────────────────
-function openRemote(deviceId) {
-  // Check if device is online first
+ function openRemote(deviceId, mode = 'webrtc') {
   const d = devicesCache.find(x => x.id === deviceId);
   if (!d) { toast('Device not found', true); return; }
   if (d.state === 'offline') {
@@ -752,9 +752,9 @@ function openRemote(deviceId) {
   if (d.state === 'busy') {
     if (!confirm(`Device ${d.name || deviceId} is already being controlled.\n\nTake over the session?`)) return;
   }
-  // Open new tab
-  window.open(`/admin-remote?device=${encodeURIComponent(deviceId)}`, '_blank');
-  toast('Opening remote session…');
+  const url = `/admin-remote?device=${encodeURIComponent(deviceId)}&mode=${encodeURIComponent(mode)}`;
+  window.open(url, '_blank');
+  toast(`Opening ${mode} session…`);
 }
 async function wipeFleet(id) {
   const phrase = prompt(`Type WIPE to confirm wiping fleet ${id}.\n\nThis deletes the fleet and every device inside it.`);
