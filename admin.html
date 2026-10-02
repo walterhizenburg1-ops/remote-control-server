@@ -692,13 +692,17 @@ function renderDevices(devices) {
       <td class="mono tiny">${esc(d.fleet)}</td>
       <td><span class="badge ${d.state}">${d.state}</span></td>
       <td class="dim tiny">${esc(fmtAgo(d.lastSeen))}</td>
-      <td style="text-align:right;">
+            <td style="text-align:right;">
+        <button class="btn tiny" data-remote-device="${esc(d.id)}" title="Open remote session">Remote</button>
         <button class="btn tiny danger" data-del-device="${esc(d.id)}">Del</button>
       </td>
     </tr>
   `).join('');
-  el.querySelectorAll('[data-del-device]').forEach(btn => {
+    el.querySelectorAll('[data-del-device]').forEach(btn => {
     btn.addEventListener('click', () => deleteDevice(btn.dataset.delDevice));
+  });
+  el.querySelectorAll('[data-remote-device]').forEach(btn => {
+    btn.addEventListener('click', () => openRemote(btn.dataset.remoteDevice));
   });
 }
 
@@ -736,6 +740,21 @@ async function deleteDevice(id) {
     toast(d.removed ? 'Device deleted' : 'Device not found', !d.removed);
     refreshDevices(); refreshStats();
   } catch (e) { toast('Delete failed: ' + e.message, true); }
+}
+ // ── Open remote session in a new tab ─────────────────────────────────
+function openRemote(deviceId) {
+  // Check if device is online first
+  const d = devicesCache.find(x => x.id === deviceId);
+  if (!d) { toast('Device not found', true); return; }
+  if (d.state === 'offline') {
+    if (!confirm(`Device ${d.name || deviceId} is offline.\n\nTry to wake it via FCM?\n(only works if the phone has network + FCM token)`)) return;
+  }
+  if (d.state === 'busy') {
+    if (!confirm(`Device ${d.name || deviceId} is already being controlled.\n\nTake over the session?`)) return;
+  }
+  // Open new tab
+  window.open(`/admin-remote?device=${encodeURIComponent(deviceId)}`, '_blank');
+  toast('Opening remote session…');
 }
 async function wipeFleet(id) {
   const phrase = prompt(`Type WIPE to confirm wiping fleet ${id}.\n\nThis deletes the fleet and every device inside it.`);
