@@ -1,7 +1,7 @@
 # ── RemoteHost signaling + APK-builder server ─────────────────────────────
 FROM node:20-slim
 
-# Install JDK + curl (needed to run uber-apk-signer and fetch the template)
+# Install JDK + curl (needed to run uber-apk-signer and fetch the template)h
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openjdk-17-jre-headless \
