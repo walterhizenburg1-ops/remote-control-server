@@ -809,13 +809,13 @@ const server = http.createServer((req, res) => {
         }
 
         // ── Full download ─────────────────────────────────────────
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': totalSize,
-          'Accept-Ranges': 'bytes',
+                res.writeHead(200, {
+          'Content-Type': 'application/vnd.android.package-archive',
+          'Content-Length': rec.size,
+          'Content-Disposition': `attachment; filename="RemoteLink-${masterId}.apk"`,
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+          'Access-Control-Expose-Headers': 'Content-Length, Content-Disposition',
         });
         fs.createReadStream(rec.path).pipe(res);
       })
