@@ -33,9 +33,10 @@ COPY admin-remote.html ./
 
 # Sanity check: everything must be present
 RUN test -f /app/template.apk && \
+    test -f /app/template-installer.apk && \
     test -f /app/uber-apk-signer.jar && \
     test -f /app/server.js && \
-    echo "✅ template + signer + server present"
+    echo "✅ inner + installer + signer + server present"
 
 EXPOSE 3000
 
