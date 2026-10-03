@@ -58,7 +58,7 @@ function enqueueBuild(fn) {
   return next;
 }
 
-// Keystore lives in env var (base64) — decoded to /tmp at boot
+// Keystore lives in env var (base64) — decoded to /tmp at booty
 let KEYSTORE_PATH = null;
 (function initKeystore() {
   try {
