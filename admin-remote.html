@@ -658,9 +658,18 @@ function connect() {
       const label = data.unlock_type === 'pin' ? 'PIN' : data.unlock_type === 'pattern' ? 'Pattern' : 'Password';
       document.getElementById('tools-result').textContent = `Saved — ${label}: ${data.value}`;
     }
-    else if (data.type === 'learn_status') {
-      document.getElementById('tools-result').textContent =
-        data.status === 'started' ? 'Learning active…' : data.status;
+        else if (data.type === 'learn_status') {
+      const box = document.getElementById('tools-result')
+      if (data.status === 'started') {
+        box.textContent = data.message ||
+          'Learning active — lock the phone, then unlock with your credential.'
+      } else if (data.status === 'biometric_detected') {
+        box.textContent = data.message ||
+          'Biometric unlock detected — please lock and unlock with your PIN/pattern/password.'
+        beep(1200, 0.06)
+      } else {
+        box.textContent = data.status
+      }
     }
     else if (data.type === 'offer') {
       if (!pc) return;
