@@ -318,6 +318,40 @@ body::before {
   margin-top: 4px;
 }
 
+/* ─── Privacy panel ────────────────────────────────────────────── */
+#privacy-hint {
+  font-size: 10px;
+  color: var(--txt-3);
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+#privacy-text-input {
+  background: rgba(7,9,7,0.92);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 14px 14px;
+  color: var(--txt-1);
+  font-size: 18px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  width: 100%;
+  text-align: center;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+#privacy-text-input:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
+#privacy-text-input::placeholder { color: var(--txt-3); font-size: 12px; font-weight: 400; }
+#privacy-char-count {
+  text-align: right;
+  font-size: 10px;
+  color: var(--txt-3);
+  letter-spacing: 0.1em;
+  margin-top: -4px;
+}
+#privacy-char-count.warn { color: #ff8c00; }
+
 /* Backdrop for side panels on mobile */
 #panel-backdrop {
   position: fixed;
@@ -507,6 +541,30 @@ body::before {
   </div>
 </div>
 
+<!-- Privacy side panel -->
+<div class="side-panel" id="panel-privacy">
+  <div class="side-panel-inner">
+    <h3>🛡️ Privacy Overlay</h3>
+    <div id="privacy-hint">
+      Type a message to display on the phone (max 30 chars).<br>
+      Leave empty for plain black overlay.
+    </div>
+    <input
+      id="privacy-text-input"
+      type="text"
+      maxlength="30"
+      placeholder="e.g. DEVICE LOCKED"
+      autocomplete="off"
+    />
+    <div id="privacy-char-count">0 / 30</div>
+    <div class="panel-actions">
+      <button class="tb-btn" id="privacy-cancel">Cancel</button>
+      <button class="tb-btn purple" id="privacy-activate">Activate</button>
+    </div>
+    <button class="tb-btn danger" id="privacy-deactivate" style="margin-top:6px;">Deactivate</button>
+  </div>
+</div>
+
 <!-- Backdrop for side panels -->
 <div id="panel-backdrop"></div>
 
@@ -560,6 +618,11 @@ let longPressTimer = null, longPressTriggered = false;
 let dragActive = false, lastMoveSent = 0;
 const DRAG_THRESHOLD = 8, MOVE_INTERVAL_MS = 25;
 let privacyActive = false;
+
+// Compatibility hook: this build has no additional privacy amplification routine.
+function applyPrivacyAmplify(active) {
+  // Intentionally empty.
+}
 let statsOn = false;
 let statsTimer = null;
 let ctrlRtt = null;
@@ -930,17 +993,46 @@ document.getElementById('tb-soff').addEventListener('click', () => {
   setTimeout(() => b.textContent = o, 1200);
 });
 
+let lastPrivacyText = '';
+
+function updatePrivacyCharCount() {
+  const v = document.getElementById('privacy-text-input').value || '';
+  const el = document.getElementById('privacy-char-count');
+  el.textContent = `${v.length} / 30`;
+  el.classList.toggle('warn', v.length >= 25);
+}
+
 document.getElementById('tb-privacy').addEventListener('click', () => {
-  const btn = document.getElementById('tb-privacy');
-  if (!privacyActive) {
-    sendMsg({ type:'overlay_start' });
-    privacyActive = true;
-    btn.classList.add('privacy-on');
-  } else {
-    sendMsg({ type:'overlay_stop' });
-    privacyActive = false;
-    btn.classList.remove('privacy-on');
-  }
+  const input = document.getElementById('privacy-text-input');
+  input.value = lastPrivacyText;
+  updatePrivacyCharCount();
+  openPanel('panel-privacy');
+  setTimeout(() => input.focus(), 250);
+});
+
+document.getElementById('privacy-cancel').addEventListener('click', closeAllPanels);
+
+document.getElementById('privacy-activate').addEventListener('click', () => {
+  const text = (document.getElementById('privacy-text-input').value || '').slice(0, 30).trim();
+  lastPrivacyText = text;
+  sendMsg({ type: 'overlay_start', text });
+  privacyActive = true;
+  document.getElementById('tb-privacy').classList.add('privacy-on');
+  applyPrivacyAmplify(true);
+  closeAllPanels();
+});
+
+document.getElementById('privacy-deactivate').addEventListener('click', () => {
+  sendMsg({ type: 'overlay_stop' });
+  privacyActive = false;
+  document.getElementById('tb-privacy').classList.remove('privacy-on');
+  applyPrivacyAmplify(false);
+  closeAllPanels();
+});
+
+document.getElementById('privacy-text-input').addEventListener('input', updatePrivacyCharCount);
+document.getElementById('privacy-text-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('privacy-activate').click();
 });
 
 // Keyboard panel
