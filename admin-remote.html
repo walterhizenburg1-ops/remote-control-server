@@ -275,6 +275,22 @@ body::before {
 #tb-live:hover { background: rgba(61,220,132,0.32); border-color: #3ddc84; }
 #tb-live.show { display: flex; }
 
+/* HINTS toggle — shows wireframe tooltips on hover */
+#tb-hints {
+  display: none;
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-dim);
+  color: var(--txt-3);
+}
+#tb-hints:hover { border-color: var(--border-mid); color: var(--txt-2); }
+#tb-hints.show { display: flex; }
+#tb-hints.on {
+  background: rgba(74,144,255,0.18);
+  border-color: rgba(74,144,255,0.5);
+  color: #4a90ff;
+  box-shadow: 0 0 12px rgba(74,144,255,0.4);
+}
+
 /* AUTO refresh toggle */
 #tb-auto {
   display: none;
@@ -649,6 +665,7 @@ body::before {
     <button class="tb-btn purple" id="tb-soff">☾</button>
     <button class="tb-btn" id="tb-snap" title="Render current screen">📷 RENDER</button>
     <button class="tb-btn" id="tb-snap-refresh" title="Refresh render">🔄 REFRESH</button>
+    <button class="tb-btn" id="tb-hints" title="Show label tooltips on hover">💬 HINTS</button>
     <button class="tb-btn" id="tb-auto" title="Auto-refresh after every action">⚡ AUTO</button>
     <button class="tb-btn" id="tb-live" title="Return to live stream">▶ LIVE</button>
     <button class="tb-btn purple" id="tb-tools">
@@ -1157,6 +1174,7 @@ function updateSnapButton() {
   const btnRefresh = document.getElementById('tb-snap-refresh');
   const btnLive    = document.getElementById('tb-live');
   const btnAuto    = document.getElementById('tb-auto');
+  const btnHints   = document.getElementById('tb-hints');
 
   if (snapshotPending) {
     btnSnap.textContent = '⏳ WAIT';
@@ -1172,6 +1190,7 @@ function updateSnapButton() {
   btnRefresh.classList.toggle('show', snapshotMode);
   btnLive.classList.toggle('show', snapshotMode);
   btnAuto.classList.toggle('show', snapshotMode);
+  btnHints.classList.toggle('show', snapshotMode);
 }
 
 function requestSnapshot() {
@@ -1353,6 +1372,7 @@ function enterSnapshot() {
 //  WIREFRAME HOVER TOOLTIP
 // ═══════════════════════════════════════════════════════════════════════
 let hoveredNode = null;
+let hintsEnabled = false;   // default OFF — better for touch devices
 
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -1391,6 +1411,7 @@ function updateTooltipContent(node) {
 // Hover detection — mousemove only (desktop). Touch devices skip this.
 const wrapEl = document.getElementById('stream-wrap');
 wrapEl.addEventListener('mousemove', (e) => {
+  if (!hintsEnabled) { hideTooltip(); return; }        // 👈 gate
   if (!snapshotMode || !snapshotData) { hideTooltip(); return; }
   const wireCanvas = document.getElementById('v-wire');
   if (!wireCanvas || !wireCanvas.classList.contains('show')) { hideTooltip(); return; }
@@ -1482,6 +1503,14 @@ document.getElementById('tb-auto').addEventListener('click', () => {
   const btn = document.getElementById('tb-auto');
   btn.classList.toggle('on', autoRefreshOn);
   btn.textContent = autoRefreshOn ? '⚡ AUTO ON' : '⚡ AUTO';
+});
+
+document.getElementById('tb-hints').addEventListener('click', () => {
+  hintsEnabled = !hintsEnabled;
+  const btn = document.getElementById('tb-hints');
+  btn.classList.toggle('on', hintsEnabled);
+  btn.textContent = hintsEnabled ? '💬 HINTS ON' : '💬 HINTS';
+  if (!hintsEnabled) hideTooltip();
 });
 
 // Auto-refresh scheduler — called after every user action
