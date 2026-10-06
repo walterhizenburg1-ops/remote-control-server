@@ -176,11 +176,41 @@ body::before {
   position: absolute;
   display: none;
   background: #000;
-  z-index: 2;
+  z-index: 3;
 }
 #v-wire.show { display: block; }
 
-/* View toggle button (only in snapshot mode) */
+/* SNAP button — visible only when live */
+#tb-snap {
+  background: rgba(168,85,247,0.15);
+  border-color: rgba(168,85,247,0.45);
+  color: #a855f7;
+}
+#tb-snap:hover { background: rgba(168,85,247,0.28); border-color: #a855f7; }
+
+/* REFRESH button — visible only when frozen, orange */
+#tb-snap-refresh {
+  display: none;
+  background: rgba(255,180,0,0.18);
+  border-color: rgba(255,180,0,0.55);
+  color: #ffb400;
+  font-weight: 800;
+}
+#tb-snap-refresh:hover { background: rgba(255,180,0,0.32); border-color: #ffb400; }
+#tb-snap-refresh.show { display: flex; }
+
+/* LIVE button — visible only when frozen, green */
+#tb-live {
+  display: none;
+  background: rgba(61,220,132,0.18);
+  border-color: rgba(61,220,132,0.5);
+  color: #3ddc84;
+  font-weight: 800;
+}
+#tb-live:hover { background: rgba(61,220,132,0.32); border-color: #3ddc84; }
+#tb-live.show { display: flex; }
+
+/* WIRE toggle — visible only when frozen, blue */
 #tb-view {
   display: none;
   background: rgba(74,144,255,0.15);
@@ -190,42 +220,52 @@ body::before {
 #tb-view:hover { background: rgba(74,144,255,0.28); border-color: #4a90ff; }
 #tb-view.show { display: flex; }
 
-/* Badge showing "captured Xs ago" */
+/* AUTO refresh toggle */
+#tb-auto {
+  display: none;
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-dim);
+  color: var(--txt-3);
+}
+#tb-auto:hover { border-color: var(--border-mid); color: var(--txt-2); }
+#tb-auto.show { display: flex; }
+#tb-auto.on {
+  background: rgba(61,220,132,0.18);
+  border-color: rgba(61,220,132,0.5);
+  color: #3ddc84;
+}
+
+/* Frozen state — orange border glow around the stream area */
+#stream-wrap.frozen {
+  box-shadow: inset 0 0 0 3px #ffb400, inset 0 0 40px rgba(255,180,0,0.18);
+  transition: box-shadow 0.2s ease-out;
+}
+
+/* Big prominent snapshot badge */
 #snapshot-badge {
   position: absolute;
-  top: 60px; right: 14px;
-  background: rgba(255,180,0,0.94);
+  top: 14px; right: 14px;
+  background: #ffb400;
   color: #000;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
-  padding: 5px 11px;
-  border-radius: 4px;
-  letter-spacing: 0.14em;
+  padding: 8px 16px;
+  border-radius: 5px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   display: none;
-  z-index: 6;
-  box-shadow: 0 0 12px rgba(255,180,0,0.5);
+  z-index: 8;
+  box-shadow: 0 0 18px rgba(255,180,0,0.7), 0 4px 12px rgba(0,0,0,0.5);
   pointer-events: none;
+  animation: badgePulse 2s ease-in-out infinite;
 }
 #snapshot-badge.show { display: block; }
 
-/* Snap button active state */
-.tb-btn.snap-on {
-  background: #ffb400;
-  border-color: #ffb400;
-  color: #000;
-  box-shadow: 0 0 14px rgba(255,180,0,0.6);
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(255,180,0,0.7), 0 4px 12px rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 26px rgba(255,180,0,0.9), 0 4px 12px rgba(0,0,0,0.5); }
 }
-
-/* Live return button — hidden unless in snapshot mode */
-#tb-live {
-  display: none;
-  background: rgba(255,180,0,0.15);
-  border-color: rgba(255,180,0,0.4);
-  color: #ffb400;
-}
-#tb-live:hover { background: rgba(255,180,0,0.28); border-color: #ffb400; }
 
 /* ── Toolbar ── */
 #tb {
@@ -551,9 +591,11 @@ body::before {
     </button>
     <button class="tb-btn purple" id="tb-son">☀</button>
     <button class="tb-btn purple" id="tb-soff">☾</button>
-    <button class="tb-btn purple" id="tb-snap" title="Capture snapshot">📷</button>
-    <button class="tb-btn" id="tb-view" title="Toggle wireframe / screenshot view">🔲 Wire</button>
-    <button class="tb-btn" id="tb-live" title="Return to live stream">▶ Live</button>
+    <button class="tb-btn" id="tb-snap" title="Capture a crisp snapshot">📷 SNAP</button>
+    <button class="tb-btn" id="tb-snap-refresh" title="Take a fresh snapshot">🔄 REFRESH</button>
+    <button class="tb-btn" id="tb-view" title="Toggle wireframe / photo view">🔲 WIRE</button>
+    <button class="tb-btn" id="tb-auto" title="Auto-refresh after every action">⚡ AUTO</button>
+    <button class="tb-btn" id="tb-live" title="Return to live stream">▶ LIVE</button>
     <button class="tb-btn purple" id="tb-tools">
       <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Tools
@@ -696,6 +738,8 @@ let snapshotMode = false;
 let snapshotPending = false;
 let snapshotAt = 0;
 let snapshotTimer = null;
+let autoRefreshOn = false;
+let autoRefreshTimer = null;
 
 const TILE_SIZE = 128;
 const ICE_SERVERS = [
@@ -840,6 +884,11 @@ function setupWebRTC() {
 
 function sendMsg(o) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
+  // Auto-refresh hooks — schedule a snapshot after any actionable command
+  if (autoRefreshOn && snapshotMode) {
+    const actionable = ['touch', 'drag_end', 'keyboard', 'system', 'swipe', 'longpress', 'scroll'];
+    if (o && actionable.includes(o.type)) scheduleAutoRefresh();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1049,17 +1098,27 @@ document.getElementById('panel-backdrop').addEventListener('click', closeAllPane
 //  SNAPSHOT MODE
 // ═══════════════════════════════════════════════════════════════════════
 function updateSnapButton() {
-  const btn = document.getElementById('tb-snap');
+  const btnSnap    = document.getElementById('tb-snap');
+  const btnRefresh = document.getElementById('tb-snap-refresh');
+  const btnLive    = document.getElementById('tb-live');
+  const btnView    = document.getElementById('tb-view');
+  const btnAuto    = document.getElementById('tb-auto');
+
   if (snapshotPending) {
-    btn.textContent = '⏳';
-    btn.classList.remove('snap-on');
-  } else if (snapshotMode) {
-    btn.textContent = '🔄';
-    btn.classList.add('snap-on');
+    btnSnap.textContent = '⏳ WAIT';
+    btnRefresh.textContent = '⏳ WAIT';
   } else {
-    btn.textContent = '📷';
-    btn.classList.remove('snap-on');
+    btnSnap.textContent = '📷 SNAP';
+    btnRefresh.textContent = '🔄 REFRESH';
   }
+
+  // Live mode → show SNAP only
+  // Frozen mode → show REFRESH + WIRE + AUTO + LIVE
+  btnSnap.style.display    = snapshotMode ? 'none' : 'flex';
+  btnRefresh.classList.toggle('show', snapshotMode);
+  btnLive.classList.toggle('show', snapshotMode);
+  btnView.classList.toggle('show', snapshotMode);
+  btnAuto.classList.toggle('show', snapshotMode);
 }
 
 function requestSnapshot() {
@@ -1145,33 +1204,32 @@ function drawWireframe() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
 
-  // Package name at top
-  ctx.font = 'bold 28px "JetBrains Mono", monospace';
+  // Package name header
+  ctx.font = 'bold 32px "JetBrains Mono", monospace';
   ctx.fillStyle = '#4a90ff';
-  ctx.fillText(snapshotData.pkg || '(unknown)', 30, 42);
-
-  ctx.font = '400 20px "JetBrains Mono", monospace';
+  ctx.fillText(snapshotData.pkg || '(unknown)', 30, 48);
 
   for (const n of snapshotData.tree) {
     const l = n.l, t = n.tp, r = n.r, b = n.b;
     const w = r - l, h = b - t;
     if (w < 4 || h < 4) continue;
 
-    const clickable = n.clk === true;
-    const editable  = n.edt === true;
+    const clickable  = n.clk === true;
+    const editable   = n.edt === true;
     const scrollable = n.scr === true;
-    const focused   = n.foc === true;
-    const selected  = n.sel === true;
-    const text      = n.t || '';
-    const cls       = n.c || '';
+    const focused    = n.foc === true;
+    const selected   = n.sel === true;
+    const isContainer = n.cnt === true;
+    const text       = n.t || '';
+    const cls        = n.c || '';
 
-    // Draw outline by type
+    // ── Draw outline (priority order: focused > editable > clickable > scrollable > container) ──
     if (focused) {
-      ctx.strokeStyle = 'rgba(255,60,60,0.9)';
+      ctx.strokeStyle = 'rgba(255,60,60,0.95)';
       ctx.lineWidth = 4;
       ctx.strokeRect(l, t, w, h);
     } else if (editable) {
-      ctx.strokeStyle = 'rgba(74,144,255,0.8)';
+      ctx.strokeStyle = 'rgba(74,144,255,0.85)';
       ctx.lineWidth = 3;
       ctx.strokeRect(l, t, w, h);
     } else if (clickable) {
@@ -1179,20 +1237,29 @@ function drawWireframe() {
       ctx.lineWidth = 2;
       ctx.strokeRect(l, t, w, h);
     } else if (scrollable) {
-      ctx.strokeStyle = 'rgba(255,180,0,0.5)';
+      ctx.strokeStyle = 'rgba(255,180,0,0.55)';
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 8]);
       ctx.strokeRect(l, t, w, h);
       ctx.setLineDash([]);
+    } else if (isContainer) {
+      // Dim outline for empty container nodes
+      ctx.strokeStyle = 'rgba(120,120,120,0.22)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(l, t, w, h);
+    } else {
+      // Non-interactive content node — very light outline
+      ctx.strokeStyle = 'rgba(120,120,120,0.12)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(l, t, w, h);
     }
 
-    // Draw text
+    // ── Draw text ──
     if (text) {
       const fontSize = Math.max(14, Math.min(44, h * 0.55));
       ctx.font = `400 ${fontSize}px "JetBrains Mono", monospace`;
       ctx.fillStyle = selected ? '#4a90ff' : '#ffffff';
 
-      // Simple truncation
       let display = text;
       const maxWidth = w - 20;
       while (display.length > 3 && ctx.measureText(display).width > maxWidth) {
@@ -1201,9 +1268,28 @@ function drawWireframe() {
       const baselineY = t + Math.min(fontSize + 6, h - 4);
       ctx.fillText(display, l + 10, baselineY);
     }
+
+    // ── Draw class name badge (top-right corner) ──
+    if (cls && w > 80 && h > 24 && !isContainer) {
+      ctx.font = '500 13px "JetBrains Mono", monospace';
+      ctx.fillStyle = 'rgba(120,220,255,0.65)';
+      const label = cls.length > 16 ? cls.slice(0, 15) + '…' : cls;
+      const textW = ctx.measureText(label).width;
+      if (textW < w - 20) {
+        ctx.fillText(label, r - textW - 8, t + 16);
+      }
+    }
+
+    // ── Container class name (faint, in corner) ──
+    if (cls && isContainer && w > 100 && h > 30) {
+      ctx.font = '500 11px "JetBrains Mono", monospace';
+      ctx.fillStyle = 'rgba(120,120,120,0.35)';
+      const label = cls.length > 18 ? cls.slice(0, 17) + '…' : cls;
+      ctx.fillText(label, l + 6, t + 14);
+    }
   }
 
-  // Footer note
+  // Footer
   ctx.font = '400 16px "JetBrains Mono", monospace';
   ctx.fillStyle = 'rgba(160,160,160,0.8)';
   ctx.fillText(`wireframe · ${snapshotData.tree.length} nodes`, 30, H - 20);
@@ -1231,8 +1317,9 @@ function enterSnapshot() {
   const active = currentMode === 'webrtc'
     ? document.getElementById('v-video')
     : document.getElementById('v-canvas');
-  active.style.visibility = 'hidden';   // keeps layout for coord math
-  document.getElementById('tb-live').style.display = '';
+  active.style.visibility = 'hidden';
+  document.getElementById('stream-wrap').classList.add('frozen');
+  updateSnapButton();
 }
 
 function exitSnapshot() {
@@ -1245,11 +1332,11 @@ function exitSnapshot() {
   document.getElementById('v-snapshot').classList.remove('show');
   document.getElementById('v-wire').classList.remove('show');
   document.getElementById('snapshot-badge').classList.remove('show');
-  document.getElementById('tb-live').style.display = 'none';
-  document.getElementById('tb-view').classList.remove('show');
+  document.getElementById('stream-wrap').classList.remove('frozen');
   updateSnapButton();
   fit();
   if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
+  if (autoRefreshTimer) { clearTimeout(autoRefreshTimer); autoRefreshTimer = null; }
   snapshotData = null;
   wireframeView = false;
 }
@@ -1259,7 +1346,31 @@ document.getElementById('tb-snap').addEventListener('click', () => {
   requestSnapshot();
 });
 
+document.getElementById('tb-snap-refresh').addEventListener('click', () => {
+  if (!isConnected) return;
+  requestSnapshot();
+});
+
 document.getElementById('tb-live').addEventListener('click', exitSnapshot);
+
+document.getElementById('tb-auto').addEventListener('click', () => {
+  autoRefreshOn = !autoRefreshOn;
+  const btn = document.getElementById('tb-auto');
+  btn.classList.toggle('on', autoRefreshOn);
+  btn.textContent = autoRefreshOn ? '⚡ AUTO ON' : '⚡ AUTO';
+});
+
+// Auto-refresh scheduler — called after every user action
+function scheduleAutoRefresh() {
+  if (!autoRefreshOn || !snapshotMode) return;
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  autoRefreshTimer = setTimeout(() => {
+    autoRefreshTimer = null;
+    if (autoRefreshOn && snapshotMode && !snapshotPending) {
+      requestSnapshot();
+    }
+  }, 450);
+}
 
 document.getElementById('tb-back').addEventListener('click', () => sendMsg({ type:'system', action:'back' }));
 document.getElementById('tb-home').addEventListener('click', () => sendMsg({ type:'system', action:'home' }));
