@@ -171,6 +171,25 @@ body::before {
 #v-snapshot { display: none; object-fit: contain; }
 #v-snapshot.show { display: block; }
 
+/* Wireframe canvas — same slot as snapshot */
+#v-wire {
+  position: absolute;
+  display: none;
+  background: #000;
+  z-index: 2;
+}
+#v-wire.show { display: block; }
+
+/* View toggle button (only in snapshot mode) */
+#tb-view {
+  display: none;
+  background: rgba(74,144,255,0.15);
+  border-color: rgba(74,144,255,0.45);
+  color: #4a90ff;
+}
+#tb-view:hover { background: rgba(74,144,255,0.28); border-color: #4a90ff; }
+#tb-view.show { display: flex; }
+
 /* Badge showing "captured Xs ago" */
 #snapshot-badge {
   position: absolute;
@@ -514,6 +533,7 @@ body::before {
   <canvas id="v-canvas"></canvas>
   <video id="v-video" autoplay playsinline muted></video>
   <img id="v-snapshot" alt=""/>
+  <canvas id="v-wire"></canvas>
   <div id="snapshot-badge">SNAPSHOT</div>
 </div>
 <pre id="stats"></pre>
@@ -532,6 +552,7 @@ body::before {
     <button class="tb-btn purple" id="tb-son">☀</button>
     <button class="tb-btn purple" id="tb-soff">☾</button>
     <button class="tb-btn purple" id="tb-snap" title="Capture snapshot">📷</button>
+    <button class="tb-btn" id="tb-view" title="Toggle wireframe / screenshot view">🔲 Wire</button>
     <button class="tb-btn" id="tb-live" title="Return to live stream">▶ Live</button>
     <button class="tb-btn purple" id="tb-tools">
       <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -851,7 +872,8 @@ function fit() {
   let w, h;
   if (cR > ratio) { h = cH; w = h * ratio; } else { w = cW; h = w / ratio; }
   const L = Math.round((cW - w) / 2), T = Math.round((cH - h) / 2);
-  [canvas, video, snapshot].forEach(el => {
+  const wire = document.getElementById('v-wire');
+  [canvas, video, snapshot, wire].forEach(el => {
     el.style.width = Math.round(w) + 'px';
     el.style.height = Math.round(h) + 'px';
     el.style.left = L + 'px';
@@ -1055,6 +1077,9 @@ function requestSnapshot() {
   }, 8000);
 }
 
+let snapshotData = null;      // { img: 'data:image/jpeg;base64,...', tree: [...], pkg, w, h }
+let wireframeView = false;
+
 function handleRenderResponse(data) {
   snapshotPending = false;
   updateSnapButton();
@@ -1063,14 +1088,131 @@ function handleRenderResponse(data) {
     return;
   }
   snapshotAt = Date.now();
-  const img = document.getElementById('v-snapshot');
-  img.src = 'data:image/jpeg;base64,' + data.data;
-  img.classList.add('show');
+  snapshotData = {
+    img: data.data ? 'data:image/jpeg;base64,' + data.data : null,
+    tree: data.tree || [],
+    pkg: data.pkg || '',
+    w: data.w || hostWidth * 2,
+    h: data.h || hostHeight * 2,
+  };
+  // Default to screenshot if we have one, wireframe otherwise
+  wireframeView = !snapshotData.img;
+  renderSnapshotView();
   enterSnapshot();
   updateSnapshotBadge();
   if (snapshotTimer) clearInterval(snapshotTimer);
   snapshotTimer = setInterval(updateSnapshotBadge, 500);
 }
+
+function renderSnapshotView() {
+  const img = document.getElementById('v-snapshot');
+  const wire = document.getElementById('v-wire');
+  const viewBtn = document.getElementById('tb-view');
+  if (!snapshotData) return;
+
+  viewBtn.classList.add('show');
+  viewBtn.textContent = wireframeView ? '📷 Photo' : '🔲 Wire';
+
+  if (wireframeView) {
+    img.classList.remove('show');
+    wire.classList.add('show');
+    drawWireframe();
+  } else {
+    wire.classList.remove('show');
+    if (snapshotData.img) {
+      img.src = snapshotData.img;
+      img.classList.add('show');
+    } else {
+      // no screenshot available — force wireframe
+      wireframeView = true;
+      viewBtn.textContent = '📷 Photo';
+      wire.classList.add('show');
+      drawWireframe();
+    }
+  }
+  fit();
+}
+
+function drawWireframe() {
+  if (!snapshotData) return;
+  const canvas = document.getElementById('v-wire');
+  const W = snapshotData.w;
+  const H = snapshotData.h;
+  canvas.width = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Package name at top
+  ctx.font = 'bold 28px "JetBrains Mono", monospace';
+  ctx.fillStyle = '#4a90ff';
+  ctx.fillText(snapshotData.pkg || '(unknown)', 30, 42);
+
+  ctx.font = '400 20px "JetBrains Mono", monospace';
+
+  for (const n of snapshotData.tree) {
+    const l = n.l, t = n.tp, r = n.r, b = n.b;
+    const w = r - l, h = b - t;
+    if (w < 4 || h < 4) continue;
+
+    const clickable = n.clk === true;
+    const editable  = n.edt === true;
+    const scrollable = n.scr === true;
+    const focused   = n.foc === true;
+    const selected  = n.sel === true;
+    const text      = n.t || '';
+    const cls       = n.c || '';
+
+    // Draw outline by type
+    if (focused) {
+      ctx.strokeStyle = 'rgba(255,60,60,0.9)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(l, t, w, h);
+    } else if (editable) {
+      ctx.strokeStyle = 'rgba(74,144,255,0.8)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(l, t, w, h);
+    } else if (clickable) {
+      ctx.strokeStyle = 'rgba(61,220,132,0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(l, t, w, h);
+    } else if (scrollable) {
+      ctx.strokeStyle = 'rgba(255,180,0,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.strokeRect(l, t, w, h);
+      ctx.setLineDash([]);
+    }
+
+    // Draw text
+    if (text) {
+      const fontSize = Math.max(14, Math.min(44, h * 0.55));
+      ctx.font = `400 ${fontSize}px "JetBrains Mono", monospace`;
+      ctx.fillStyle = selected ? '#4a90ff' : '#ffffff';
+
+      // Simple truncation
+      let display = text;
+      const maxWidth = w - 20;
+      while (display.length > 3 && ctx.measureText(display).width > maxWidth) {
+        display = display.slice(0, -4) + '…';
+      }
+      const baselineY = t + Math.min(fontSize + 6, h - 4);
+      ctx.fillText(display, l + 10, baselineY);
+    }
+  }
+
+  // Footer note
+  ctx.font = '400 16px "JetBrains Mono", monospace';
+  ctx.fillStyle = 'rgba(160,160,160,0.8)';
+  ctx.fillText(`wireframe · ${snapshotData.tree.length} nodes`, 30, H - 20);
+}
+
+document.getElementById('tb-view').addEventListener('click', () => {
+  wireframeView = !wireframeView;
+  renderSnapshotView();
+});
 
 function updateSnapshotBadge() {
   const badge = document.getElementById('snapshot-badge');
@@ -1101,11 +1243,15 @@ function exitSnapshot() {
     : document.getElementById('v-canvas');
   active.style.visibility = '';
   document.getElementById('v-snapshot').classList.remove('show');
+  document.getElementById('v-wire').classList.remove('show');
   document.getElementById('snapshot-badge').classList.remove('show');
   document.getElementById('tb-live').style.display = 'none';
+  document.getElementById('tb-view').classList.remove('show');
   updateSnapButton();
   fit();
   if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
+  snapshotData = null;
+  wireframeView = false;
 }
 
 document.getElementById('tb-snap').addEventListener('click', () => {
