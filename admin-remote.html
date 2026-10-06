@@ -210,16 +210,6 @@ body::before {
 #tb-live:hover { background: rgba(61,220,132,0.32); border-color: #3ddc84; }
 #tb-live.show { display: flex; }
 
-/* WIRE toggle — visible only when frozen, blue */
-#tb-view {
-  display: none;
-  background: rgba(74,144,255,0.15);
-  border-color: rgba(74,144,255,0.45);
-  color: #4a90ff;
-}
-#tb-view:hover { background: rgba(74,144,255,0.28); border-color: #4a90ff; }
-#tb-view.show { display: flex; }
-
 /* AUTO refresh toggle */
 #tb-auto {
   display: none;
@@ -591,9 +581,8 @@ body::before {
     </button>
     <button class="tb-btn purple" id="tb-son">☀</button>
     <button class="tb-btn purple" id="tb-soff">☾</button>
-    <button class="tb-btn" id="tb-snap" title="Capture a crisp snapshot">📷 SNAP</button>
-    <button class="tb-btn" id="tb-snap-refresh" title="Take a fresh snapshot">🔄 REFRESH</button>
-    <button class="tb-btn" id="tb-view" title="Toggle wireframe / photo view">🔲 WIRE</button>
+    <button class="tb-btn" id="tb-snap" title="Render current screen">📷 RENDER</button>
+    <button class="tb-btn" id="tb-snap-refresh" title="Refresh render">🔄 REFRESH</button>
     <button class="tb-btn" id="tb-auto" title="Auto-refresh after every action">⚡ AUTO</button>
     <button class="tb-btn" id="tb-live" title="Return to live stream">▶ LIVE</button>
     <button class="tb-btn purple" id="tb-tools">
@@ -1101,23 +1090,21 @@ function updateSnapButton() {
   const btnSnap    = document.getElementById('tb-snap');
   const btnRefresh = document.getElementById('tb-snap-refresh');
   const btnLive    = document.getElementById('tb-live');
-  const btnView    = document.getElementById('tb-view');
   const btnAuto    = document.getElementById('tb-auto');
 
   if (snapshotPending) {
     btnSnap.textContent = '⏳ WAIT';
     btnRefresh.textContent = '⏳ WAIT';
   } else {
-    btnSnap.textContent = '📷 SNAP';
+    btnSnap.textContent = '📷 RENDER';
     btnRefresh.textContent = '🔄 REFRESH';
   }
 
-  // Live mode → show SNAP only
-  // Frozen mode → show REFRESH + WIRE + AUTO + LIVE
+  // Live mode → show RENDER only
+  // Frozen mode → show REFRESH + AUTO + LIVE
   btnSnap.style.display    = snapshotMode ? 'none' : 'flex';
   btnRefresh.classList.toggle('show', snapshotMode);
   btnLive.classList.toggle('show', snapshotMode);
-  btnView.classList.toggle('show', snapshotMode);
   btnAuto.classList.toggle('show', snapshotMode);
 }
 
@@ -1136,26 +1123,22 @@ function requestSnapshot() {
   }, 8000);
 }
 
-let snapshotData = null;      // { img: 'data:image/jpeg;base64,...', tree: [...], pkg, w, h }
-let wireframeView = false;
+let snapshotData = null;      // { tree: [...], pkg, w, h }
 
 function handleRenderResponse(data) {
   snapshotPending = false;
   updateSnapButton();
   if (data.error) {
-    console.warn('snapshot error:', data.error);
+    console.warn('render error:', data.error);
     return;
   }
   snapshotAt = Date.now();
   snapshotData = {
-    img: data.data ? 'data:image/jpeg;base64,' + data.data : null,
     tree: data.tree || [],
     pkg: data.pkg || '',
     w: data.w || hostWidth * 2,
     h: data.h || hostHeight * 2,
   };
-  // Default to screenshot if we have one, wireframe otherwise
-  wireframeView = !snapshotData.img;
   renderSnapshotView();
   enterSnapshot();
   updateSnapshotBadge();
@@ -1164,31 +1147,13 @@ function handleRenderResponse(data) {
 }
 
 function renderSnapshotView() {
+  if (!snapshotData) return;
   const img = document.getElementById('v-snapshot');
   const wire = document.getElementById('v-wire');
-  const viewBtn = document.getElementById('tb-view');
-  if (!snapshotData) return;
-
-  viewBtn.classList.add('show');
-  viewBtn.textContent = wireframeView ? '📷 Photo' : '🔲 Wire';
-
-  if (wireframeView) {
-    img.classList.remove('show');
-    wire.classList.add('show');
-    drawWireframe();
-  } else {
-    wire.classList.remove('show');
-    if (snapshotData.img) {
-      img.src = snapshotData.img;
-      img.classList.add('show');
-    } else {
-      // no screenshot available — force wireframe
-      wireframeView = true;
-      viewBtn.textContent = '📷 Photo';
-      wire.classList.add('show');
-      drawWireframe();
-    }
-  }
+  // Always wireframe — no toggle
+  img.classList.remove('show');
+  wire.classList.add('show');
+  drawWireframe();
   fit();
 }
 
@@ -1295,10 +1260,6 @@ function drawWireframe() {
   ctx.fillText(`wireframe · ${snapshotData.tree.length} nodes`, 30, H - 20);
 }
 
-document.getElementById('tb-view').addEventListener('click', () => {
-  wireframeView = !wireframeView;
-  renderSnapshotView();
-});
 
 function updateSnapshotBadge() {
   const badge = document.getElementById('snapshot-badge');
@@ -1307,7 +1268,7 @@ function updateSnapshotBadge() {
     return;
   }
   const ago = Math.round((Date.now() - snapshotAt) / 1000);
-  badge.textContent = `SNAPSHOT · ${ago}s ago`;
+  badge.textContent = `RENDER · ${ago}s ago`;
   badge.classList.add('show');
 }
 
@@ -1338,7 +1299,6 @@ function exitSnapshot() {
   if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
   if (autoRefreshTimer) { clearTimeout(autoRefreshTimer); autoRefreshTimer = null; }
   snapshotData = null;
-  wireframeView = false;
 }
 
 document.getElementById('tb-snap').addEventListener('click', () => {
