@@ -160,14 +160,53 @@ body::before {
   user-select: none;
   -webkit-user-select: none;
 }
-#v-canvas, #v-video {
+#v-canvas, #v-video, #v-snapshot {
   position: absolute;
-  pointer-events: none; /* let wrapper catch everything */
+  pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
 }
 #v-canvas { display: none; }
 #v-video { display: none; object-fit: contain; }
+#v-snapshot { display: none; object-fit: contain; }
+#v-snapshot.show { display: block; }
+
+/* Badge showing "captured Xs ago" */
+#snapshot-badge {
+  position: absolute;
+  top: 60px; right: 14px;
+  background: rgba(255,180,0,0.94);
+  color: #000;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: 4px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  display: none;
+  z-index: 6;
+  box-shadow: 0 0 12px rgba(255,180,0,0.5);
+  pointer-events: none;
+}
+#snapshot-badge.show { display: block; }
+
+/* Snap button active state */
+.tb-btn.snap-on {
+  background: #ffb400;
+  border-color: #ffb400;
+  color: #000;
+  box-shadow: 0 0 14px rgba(255,180,0,0.6);
+}
+
+/* Live return button — hidden unless in snapshot mode */
+#tb-live {
+  display: none;
+  background: rgba(255,180,0,0.15);
+  border-color: rgba(255,180,0,0.4);
+  color: #ffb400;
+}
+#tb-live:hover { background: rgba(255,180,0,0.28); border-color: #ffb400; }
 
 /* ── Toolbar ── */
 #tb {
@@ -474,6 +513,8 @@ body::before {
 <div id="stream-wrap">
   <canvas id="v-canvas"></canvas>
   <video id="v-video" autoplay playsinline muted></video>
+  <img id="v-snapshot" alt=""/>
+  <div id="snapshot-badge">SNAPSHOT</div>
 </div>
 <pre id="stats"></pre>
 
@@ -490,6 +531,8 @@ body::before {
     </button>
     <button class="tb-btn purple" id="tb-son">☀</button>
     <button class="tb-btn purple" id="tb-soff">☾</button>
+    <button class="tb-btn purple" id="tb-snap" title="Capture snapshot">📷</button>
+    <button class="tb-btn" id="tb-live" title="Return to live stream">▶ Live</button>
     <button class="tb-btn purple" id="tb-tools">
       <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Tools
@@ -627,6 +670,12 @@ let lastBytes = 0, lastTs = 0;
 const ss = { bytes:0, recv:0, drawn:0, full:0, tiles:0 };
 let ssPrev = null;
 
+// Snapshot state
+let snapshotMode = false;
+let snapshotPending = false;
+let snapshotAt = 0;
+let snapshotTimer = null;
+
 const TILE_SIZE = 128;
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -746,6 +795,7 @@ function connect() {
       try { await pc.addIceCandidate({ candidate: data.candidate, sdpMid: data.sdpMid, sdpMLineIndex: data.sdpMLineIndex }); } catch(_) {}
     }
     else if (data.type === 'pong') { ctrlRtt = Date.now() - data.t; }
+    else if (data.type === 'render_response') { handleRenderResponse(data); }
     else if (data.type === 'peer-left') { disconnect('Host disconnected'); }
   };
 
@@ -793,6 +843,7 @@ function fit() {
   const wrap = document.getElementById('stream-wrap');
   const canvas = document.getElementById('v-canvas');
   const video = document.getElementById('v-video');
+  const snapshot = document.getElementById('v-snapshot');
   const cW = wrap.clientWidth, cH = wrap.clientHeight;
   if (!cW || !cH) return;
   const ratio = hostWidth / hostHeight;
@@ -800,7 +851,7 @@ function fit() {
   let w, h;
   if (cR > ratio) { h = cH; w = h * ratio; } else { w = cW; h = w / ratio; }
   const L = Math.round((cW - w) / 2), T = Math.round((cH - h) / 2);
-  [canvas, video].forEach(el => {
+  [canvas, video, snapshot].forEach(el => {
     el.style.width = Math.round(w) + 'px';
     el.style.height = Math.round(h) + 'px';
     el.style.left = L + 'px';
@@ -972,6 +1023,98 @@ document.getElementById('panel-backdrop').addEventListener('click', closeAllPane
 // ═══════════════════════════════════════════════════════════════════════
 //  TOOLBAR BUTTONS
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+//  SNAPSHOT MODE
+// ═══════════════════════════════════════════════════════════════════════
+function updateSnapButton() {
+  const btn = document.getElementById('tb-snap');
+  if (snapshotPending) {
+    btn.textContent = '⏳';
+    btn.classList.remove('snap-on');
+  } else if (snapshotMode) {
+    btn.textContent = '🔄';
+    btn.classList.add('snap-on');
+  } else {
+    btn.textContent = '📷';
+    btn.classList.remove('snap-on');
+  }
+}
+
+function requestSnapshot() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  snapshotPending = true;
+  updateSnapButton();
+  ws.send(JSON.stringify({ type: 'render_request' }));
+  // Fallback timeout
+  setTimeout(() => {
+    if (snapshotPending) {
+      snapshotPending = false;
+      updateSnapButton();
+      console.warn('snapshot timeout');
+    }
+  }, 8000);
+}
+
+function handleRenderResponse(data) {
+  snapshotPending = false;
+  updateSnapButton();
+  if (data.error) {
+    console.warn('snapshot error:', data.error);
+    return;
+  }
+  snapshotAt = Date.now();
+  const img = document.getElementById('v-snapshot');
+  img.src = 'data:image/jpeg;base64,' + data.data;
+  img.classList.add('show');
+  enterSnapshot();
+  updateSnapshotBadge();
+  if (snapshotTimer) clearInterval(snapshotTimer);
+  snapshotTimer = setInterval(updateSnapshotBadge, 500);
+}
+
+function updateSnapshotBadge() {
+  const badge = document.getElementById('snapshot-badge');
+  if (!snapshotMode || !snapshotAt) {
+    badge.classList.remove('show');
+    return;
+  }
+  const ago = Math.round((Date.now() - snapshotAt) / 1000);
+  badge.textContent = `SNAPSHOT · ${ago}s ago`;
+  badge.classList.add('show');
+}
+
+function enterSnapshot() {
+  if (snapshotMode) return;
+  snapshotMode = true;
+  const active = currentMode === 'webrtc'
+    ? document.getElementById('v-video')
+    : document.getElementById('v-canvas');
+  active.style.visibility = 'hidden';   // keeps layout for coord math
+  document.getElementById('tb-live').style.display = '';
+}
+
+function exitSnapshot() {
+  if (!snapshotMode) return;
+  snapshotMode = false;
+  const active = currentMode === 'webrtc'
+    ? document.getElementById('v-video')
+    : document.getElementById('v-canvas');
+  active.style.visibility = '';
+  document.getElementById('v-snapshot').classList.remove('show');
+  document.getElementById('snapshot-badge').classList.remove('show');
+  document.getElementById('tb-live').style.display = 'none';
+  updateSnapButton();
+  fit();
+  if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
+}
+
+document.getElementById('tb-snap').addEventListener('click', () => {
+  if (!isConnected) return;
+  requestSnapshot();
+});
+
+document.getElementById('tb-live').addEventListener('click', exitSnapshot);
+
 document.getElementById('tb-back').addEventListener('click', () => sendMsg({ type:'system', action:'back' }));
 document.getElementById('tb-home').addEventListener('click', () => sendMsg({ type:'system', action:'home' }));
 document.getElementById('tb-recents').addEventListener('click', () => sendMsg({ type:'system', action:'recents' }));
@@ -1115,6 +1258,7 @@ function stopStats() {
 
 // Disconnect
 function disconnect(reason) {
+  if (snapshotMode) exitSnapshot();
   if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
   try { pc?.close(); } catch(_) {}
   try { ws?.close(); } catch(_) {}
