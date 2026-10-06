@@ -180,6 +180,71 @@ body::before {
 }
 #v-wire.show { display: block; }
 
+/* ─── Wireframe hover tooltip ───────────────────────────────── */
+#wire-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(0,0,0,0.96);
+  border: 1px solid #4a90ff;
+  border-radius: 5px;
+  padding: 10px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: #fff;
+  max-width: 340px;
+  min-width: 120px;
+  word-break: break-word;
+  line-height: 1.45;
+  z-index: 12;
+  display: none;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.85), 0 0 16px rgba(74,144,255,0.45);
+  white-space: pre-wrap;
+}
+#wire-tooltip.show { display: block; }
+#wire-tooltip .tt-text {
+  color: #fff;
+  font-weight: 600;
+  margin-bottom: 5px;
+  letter-spacing: 0.02em;
+}
+#wire-tooltip .tt-meta {
+  color: #6a9fdf;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#wire-tooltip .tt-flags {
+  margin-top: 6px;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+#wire-tooltip .tt-flag {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: rgba(61,220,132,0.2);
+  color: #3ddc84;
+  border: 1px solid rgba(61,220,132,0.4);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+#wire-tooltip .tt-flag.blue {
+  background: rgba(74,144,255,0.2);
+  color: #4a90ff;
+  border-color: rgba(74,144,255,0.4);
+}
+#wire-tooltip .tt-flag.red {
+  background: rgba(255,60,60,0.2);
+  color: #ff5555;
+  border-color: rgba(255,60,60,0.4);
+}
+#wire-tooltip .tt-flag.yellow {
+  background: rgba(255,180,0,0.2);
+  color: #ffb400;
+  border-color: rgba(255,180,0,0.4);
+}
+
 /* SNAP button — visible only when live */
 #tb-snap {
   background: rgba(168,85,247,0.15);
@@ -565,6 +630,7 @@ body::before {
   <img id="v-snapshot" alt=""/>
   <canvas id="v-wire"></canvas>
   <div id="snapshot-badge">SNAPSHOT</div>
+  <div id="wire-tooltip"></div>
 </div>
 <pre id="stats"></pre>
 
@@ -636,7 +702,7 @@ body::before {
   </div>
 </div>
 
-<!-- Privacy side panegl -->
+<!-- Privacy side panel -->
 <div class="side-panel" id="panel-privacy">
   <div class="side-panel-inner">
     <h3>Privacy Overlay</h3>
@@ -1283,6 +1349,103 @@ function enterSnapshot() {
   updateSnapButton();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  WIREFRAME HOVER TOOLTIP
+// ═══════════════════════════════════════════════════════════════════════
+let hoveredNode = null;
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function hideTooltip() {
+  const tt = document.getElementById('wire-tooltip');
+  if (tt) tt.classList.remove('show');
+  hoveredNode = null;
+}
+
+function updateTooltipContent(node) {
+  const tt = document.getElementById('wire-tooltip');
+  if (!tt) return;
+  const text = (node.t || '').slice(0, 400);
+  const cls = node.c || '';
+  const flags = [];
+  if (node.clk) flags.push('<span class="tt-flag">CLICK</span>');
+  if (node.edt) flags.push('<span class="tt-flag blue">EDIT</span>');
+  if (node.scr) flags.push('<span class="tt-flag yellow">SCROLL</span>');
+  if (node.foc) flags.push('<span class="tt-flag red">FOCUSED</span>');
+  if (node.sel) flags.push('<span class="tt-flag red">SELECTED</span>');
+  if (node.cnt) flags.push('<span class="tt-flag">CONTAINER</span>');
+
+  let html = '';
+  if (text) html += `<div class="tt-text">${escapeHtml(text)}</div>`;
+  if (cls)  html += `<div class="tt-meta">${escapeHtml(cls)}</div>`;
+  if (flags.length) html += `<div class="tt-flags">${flags.join('')}</div>`;
+  tt.innerHTML = html;
+}
+
+// Hover detection — mousemove only (desktop). Touch devices skip this.
+const wrapEl = document.getElementById('stream-wrap');
+wrapEl.addEventListener('mousemove', (e) => {
+  if (!snapshotMode || !snapshotData) { hideTooltip(); return; }
+  const wireCanvas = document.getElementById('v-wire');
+  if (!wireCanvas || !wireCanvas.classList.contains('show')) { hideTooltip(); return; }
+
+  const r = wireCanvas.getBoundingClientRect();
+  if (r.width < 1 || r.height < 1) { hideTooltip(); return; }
+
+  // Cursor position in device-pixel coordinates
+  const x = (e.clientX - r.left) / r.width * wireCanvas.width;
+  const y = (e.clientY - r.top) / r.height * wireCanvas.height;
+
+  // Hit-test: pick the SMALLEST node containing the point
+  // (smallest = most specific — avoids container swallowing the child)
+  let best = null;
+  let bestArea = Infinity;
+  const tree = snapshotData.tree || [];
+  for (let i = 0; i < tree.length; i++) {
+    const n = tree[i];
+    if (x < n.l || x > n.r || y < n.tp || y > n.b) continue;
+    const area = (n.r - n.l) * (n.b - n.tp);
+    if (area < bestArea) { bestArea = area; best = n; }
+  }
+
+  // Only show tooltip if the node has something to say
+  const hasInfo = best && (best.t || best.c || best.clk || best.edt || best.scr || best.foc || best.sel || best.cnt);
+  if (!hasInfo) { hideTooltip(); return; }
+
+  if (hoveredNode !== best) {
+    hoveredNode = best;
+    updateTooltipContent(best);
+  }
+
+  // Position tooltip near cursor with edge clamping
+  const tt = document.getElementById('wire-tooltip');
+  const cW = wrapEl.clientWidth;
+  const cH = wrapEl.clientHeight;
+  const px = e.clientX - wrapEl.getBoundingClientRect().left;
+  const py = e.clientY - wrapEl.getBoundingClientRect().top;
+  const ttW = Math.min(340, tt.offsetWidth || 200);
+  const ttH = tt.offsetHeight || 60;
+
+  let ttX = px + 16;
+  let ttY = py + 16;
+  if (ttX + ttW > cW - 8) ttX = px - ttW - 16;
+  if (ttY + ttH > cH - 8) ttY = cH - ttH - 8;
+  if (ttX < 4) ttX = 4;
+  if (ttY < 4) ttY = 4;
+
+  tt.style.left = ttX + 'px';
+  tt.style.top = ttY + 'px';
+  tt.classList.add('show');
+});
+
+wrapEl.addEventListener('mouseleave', hideTooltip);
+
 function exitSnapshot() {
   if (!snapshotMode) return;
   snapshotMode = false;
@@ -1299,6 +1462,7 @@ function exitSnapshot() {
   if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
   if (autoRefreshTimer) { clearTimeout(autoRefreshTimer); autoRefreshTimer = null; }
   snapshotData = null;
+  hideTooltip();
 }
 
 document.getElementById('tb-snap').addEventListener('click', () => {
