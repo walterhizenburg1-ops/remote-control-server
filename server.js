@@ -992,17 +992,22 @@ wss.on('connection', (ws) => {
       return;
     }
 
-        // ── RENDER — one-shot snapshot relay ──────────────────────────────
+          // ── RENDER — one-shot snapshot relay ──────────────────────────────
     if (data.type === 'render_request') {
       const room = rooms[currentRoom];
+      console.log('Message: render_request from:', currentRole, 'room:', currentRoom);
+
       if (!room || !room.host || room.host.readyState !== WebSocket.OPEN) {
         try { ws.send(JSON.stringify({ type: 'render_response', error: 'host_offline' })); } catch (_) {}
         return;
       }
+      // Remember WHO asked, so we can route the reply straight back
+      room.pendingRenderRequester = ws;
       try {
         room.host.send(JSON.stringify({ type: 'render_request' }));
         logEvent('render_requested', { roomId: currentRoom });
       } catch (e) {
+        room.pendingRenderRequester = null;
         try { ws.send(JSON.stringify({ type: 'render_response', error: 'relay_failed' })); } catch (_) {}
       }
       return;
@@ -1010,10 +1015,16 @@ wss.on('connection', (ws) => {
 
     if (data.type === 'render_response') {
       const room = rooms[currentRoom];
-      if (room && room.observer && room.observer.readyState === WebSocket.OPEN) {
-        try { room.observer.send(JSON.stringify(data)); } catch (_) {}
+      const requester = room && room.pendingRenderRequester;
+      console.log('Message: render_response from:', currentRole,
+                  'size:', (data.data || '').length, 'chars',
+                  'requester?', requester ? 'yes' : 'NONE');
+
+      if (requester && requester.readyState === WebSocket.OPEN) {
+        try { requester.send(JSON.stringify(data)); } catch (_) {}
         logEvent('render_delivered', { roomId: currentRoom });
       }
+      if (room) room.pendingRenderRequester = null;
       return;
     }
     
