@@ -1236,6 +1236,7 @@ wrap.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('keydown', e => {
   if (e.target === document.getElementById('kb-input')) return;
   if (e.target === document.getElementById('privacy-text-input')) return;
+  if (e.target === document.getElementById('auto-click-input')) return;   // 👈 fix
   if (e.repeat) return;
   if (e.key === 'Backspace') { e.preventDefault(); sendMsg({ type:'keyboard', text:'\b' }); }
   else if (e.key === 'Enter') { sendMsg({ type:'keyboard', text:'\n' }); }
