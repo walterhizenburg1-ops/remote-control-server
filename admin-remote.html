@@ -275,6 +275,71 @@ body::before {
 #tb-live:hover { background: rgba(61,220,132,0.32); border-color: #3ddc84; }
 #tb-live.show { display: flex; }
 
+/* Auto-click panel */
+#ac-hint {
+  font-size: 10px;
+  color: var(--txt-3);
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+#ac-hint code {
+  color: #4a90ff;
+  font-weight: 700;
+  background: rgba(74,144,255,0.12);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+#ac-input {
+  background: rgba(7,9,7,0.92);
+  border: 1px solid var(--border-dim);
+  border-radius: 5px;
+  padding: 13px 14px;
+  color: var(--txt-1);
+  font-size: 15px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  width: 100%;
+  text-align: center;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+#ac-input:focus { border-color: var(--red); box-shadow: 0 0 14px var(--red-glow-soft); }
+#ac-input::placeholder {
+  color: var(--txt-3);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.ac-result {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--txt-2);
+  background: rgba(2,5,3,0.9);
+  border: 1px solid var(--border-faint);
+  border-radius: 5px;
+  padding: 10px 12px;
+  min-height: 42px;
+  line-height: 1.6;
+  word-break: break-word;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+.ac-result.success {
+  color: #3ddc84;
+  border-color: rgba(61,220,132,0.35);
+  background: rgba(61,220,132,0.08);
+}
+.ac-result.fail {
+  color: #ff6666;
+  border-color: rgba(255,60,60,0.35);
+  background: rgba(255,60,60,0.08);
+}
+
 /* HINTS toggle — shows wireframe tooltips on hover */
 #tb-hints {
   display: none;
@@ -668,6 +733,9 @@ body::before {
     <button class="tb-btn" id="tb-hints" title="Show label tooltips on hover">💬 HINTS</button>
     <button class="tb-btn" id="tb-auto" title="Auto-refresh after every action">⚡ AUTO</button>
     <button class="tb-btn" id="tb-live" title="Return to live stream">▶ LIVE</button>
+    <button class="tb-btn" id="tb-auto-click" title="Click a button by its text">
+      🖱 CLICK
+    </button>
     <button class="tb-btn purple" id="tb-tools">
       <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.77 3.77z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Tools
@@ -716,6 +784,29 @@ body::before {
     <div class="panel-actions">
       <button class="tb-btn" id="tools-close">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Auto-click side panel -->
+<div class="side-panel" id="panel-auto-click">
+  <div class="side-panel-inner">
+    <h3>Universal Auto-Click</h3>
+    <div id="ac-hint">
+      Type the exact text of the button you want to click.<br>
+      Use <code>Text[2]</code> for the 2nd match if there are duplicates.
+    </div>
+    <input
+      id="ac-input"
+      type="text"
+      maxlength="60"
+      placeholder="e.g. Cancel"
+      autocomplete="off"
+    />
+    <div class="panel-actions">
+      <button class="tb-btn" id="ac-cancel">Cancel</button>
+      <button class="tb-btn purple" id="ac-send">Send</button>
+    </div>
+    <div id="ac-result" class="ac-result">—</div>
   </div>
 </div>
 
@@ -933,6 +1024,7 @@ function connect() {
     }
     else if (data.type === 'pong') { ctrlRtt = Date.now() - data.t; }
     else if (data.type === 'render_response') { handleRenderResponse(data); }
+    else if (data.type === 'auto_click_result') { handleAutoClickResult(data); }
     else if (data.type === 'peer-left') { disconnect('Host disconnected'); }
   };
 
@@ -1695,6 +1787,48 @@ document.getElementById('hd-back').addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+//  UNIVERSAL AUTO-CLICK PANEL
+// ═══════════════════════════════════════════════════════════════════════
+function showAutoClickResult(success, message, suggestions) {
+  const el = document.getElementById('ac-result');
+  let text = (success ? '✅ ' : '❌ ') + message;
+  if (suggestions && suggestions.length > 0) {
+    text += '\n\nAvailable clickable texts:\n';
+    for (const s of suggestions) text += '  • ' + s + '\n';
+    text = text.trimEnd();
+  }
+  el.textContent = text;
+  el.classList.toggle('success', !!success);
+  el.classList.toggle('fail', !success);
+}
+
+document.getElementById('tb-auto-click').addEventListener('click', () => {
+  if (!isConnected) { return; }
+  openPanel('panel-auto-click');
+  const input = document.getElementById('ac-input');
+  setTimeout(() => input.focus(), 250);
+});
+
+document.getElementById('ac-cancel').addEventListener('click', () => {
+  closeAllPanels();
+});
+
+document.getElementById('ac-send').addEventListener('click', () => {
+  const query = (document.getElementById('ac-input').value || '').trim();
+  if (!query) return;
+  showAutoClickResult(true, 'Searching for "' + query + '"…', []);
+  sendMsg({ type: 'auto_click', query });
+});
+
+document.getElementById('ac-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('ac-send').click();
+});
+
+function handleAutoClickResult(data) {
+  showAutoClickResult(!!data.success, data.message || '', data.suggestions || []);
+}
+
 if (DEVICE_ID) {
   setTimeout(connect, 200);
 }
